@@ -8,7 +8,7 @@ Future<void> main() async {
 
   await Supabase.initialize(
     url: 'https://sekchgllbimoedsjoumi.supabase.co',
-    anonKey: 'sb_publishable_EZLVSUvi39RXi6OP3OqfQ_3j7vMZcU',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNla2NoZ2xsYmltb2Vkc2pvdW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExNzQ3NzcsImV4cCI6MjEwNjc1MDc3N30.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
   );
 
   runApp(const MrOtakuApp());
@@ -616,8 +616,6 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
               backgroundColor: Color(0xFF120707),
               indicatorColor: Color(0xFF7F101B),
             ),
-
-            // تم إصلاح الخطأ هنا:
             cardTheme: CardTheme(
               color: const Color(0xFF181010),
               elevation: 2,
@@ -628,7 +626,6 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
                 ),
               ),
             ),
-
             inputDecorationTheme:
                 InputDecorationTheme(
               filled: true,
