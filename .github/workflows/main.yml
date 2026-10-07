@@ -18,6 +18,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Remove local.properties if exists
+        run: rm -f android/local.properties
+
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
@@ -31,15 +34,8 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
       - name: Get dependencies
         run: flutter pub get
-
-      - name: Analyze project
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
-        continue-on-error: true
 
       - name: Build Release APK
         run: flutter build apk --release
