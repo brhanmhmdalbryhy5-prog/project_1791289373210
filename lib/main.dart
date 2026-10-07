@@ -3161,8 +3161,7 @@ class _NewsCarousel
       ),
     );
   }
-}
-/// =======================================================
+}/// =======================================================
 /// تفاصيل الخبر
 /// =======================================================
 
@@ -5819,12 +5818,12 @@ class JumpPainter extends CustomPainter {
   @override
   bool shouldRepaint(
     covariant JumpPainter oldDelegate,
-  ) {
+    ) {
     return oldDelegate.playerY != playerY ||
         oldDelegate.rockX != rockX;
   }
 }
-  @override
+}  @override
   bool shouldRepaint(
     covariant JumpPainter oldDelegate,
   ) {
@@ -5934,9 +5933,8 @@ class _ShopPageState extends State<ShopPage> {
   void initState() {
     super.initState();
 
-    // يجب استخدام الحساب الحالي فقط.
-    // لا نستخدم أول لاعب من القائمة حتى لا يتم إرسال
-    // طلب شراء باسم حساب آخر.
+    // استخدام الحساب الحالي فقط.
+    // لا يتم اختيار أول لاعب من قاعدة البيانات تلقائياً.
     selectedPlayer = widget.data.currentPlayer;
   }
 
@@ -5964,18 +5962,8 @@ class _ShopPageState extends State<ShopPage> {
       return;
     }
 
-    final playerId = selectedPlayer!['id'];
-
-    if (playerId == null) {
-      showSnack(
-        context,
-        'معرف الحساب غير صالح.',
-      );
-      return;
-    }
-
     final ok = await widget.data.createPurchaseRequest(
-      playerId,
+      selectedPlayer!['id'],
       item,
       cost,
     );
@@ -6110,15 +6098,13 @@ class _SendMessagePageState
     extends State<SendMessagePage> {
   final controller = TextEditingController();
 
-  Future<void> send() async {
-    if (controller.text.trim().isEmpty) {
-      showSnack(
-        context,
-        'اكتب الرسالة أولاً.',
-      );
-      return;
-    }
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
+  Future<void> send() async {
     final ok = await widget.data.sendMessage(
       widget.data.currentUserName,
       controller.text,
@@ -6139,12 +6125,6 @@ class _SendMessagePageState
         'تعذر إرسال الرسالة.',
       );
     }
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
   }
 
   @override
@@ -6357,13 +6337,16 @@ class _AdminLoginPageState
 
   bool loading = false;
 
+  @override
+  void dispose() {
+    email.dispose();
+    password.dispose();
+    super.dispose();
+  }
+
   Future<void> login() async {
     if (email.text.trim().isEmpty ||
         password.text.isEmpty) {
-      showSnack(
-        context,
-        'أدخل البريد الإلكتروني وكلمة المرور.',
-      );
       return;
     }
 
@@ -6432,13 +6415,6 @@ class _AdminLoginPageState
   }
 
   @override
-  void dispose() {
-    email.dispose();
-    password.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -6476,13 +6452,7 @@ class _AdminLoginPageState
               child: FilledButton(
                 onPressed: loading ? null : login,
                 child: loading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
+                    ? const CircularProgressIndicator()
                     : const Text(
                         'دخول',
                       ),
@@ -6595,8 +6565,7 @@ class AdminPanelPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      ManageCharactersPage(
+                  builder: (_) => ManageCharactersPage(
                     data: data,
                   ),
                 ),
@@ -6695,8 +6664,7 @@ class AdminPanelPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      ManageMessagesPage(
+                  builder: (_) => ManageMessagesPage(
                     data: data,
                   ),
                 ),
@@ -6804,8 +6772,7 @@ class _ManageQuizPageState
           'إدارة الأسئلة',
         ),
       ),
-      floatingActionButton:
-          FloatingActionButton(
+      floatingActionButton: FloatingActionButton(
         onPressed: () async {
           await Navigator.push(
             context,
@@ -6816,9 +6783,9 @@ class _ManageQuizPageState
             ),
           );
 
-          if (mounted) {
-            setState(() {});
-          }
+          if (!mounted) return;
+
+          setState(() {});
         },
         child: const Icon(
           Icons.add,
@@ -6870,9 +6837,9 @@ class _ManageQuizPageState
                               ),
                             );
 
-                            if (mounted) {
-                              setState(() {});
-                            }
+                            if (!mounted) return;
+
+                            setState(() {});
                           },
                           icon: const Icon(
                             Icons.edit,
@@ -6885,9 +6852,9 @@ class _ManageQuizPageState
                               q['id'],
                             );
 
-                            if (mounted) {
-                              setState(() {});
-                            }
+                            if (!mounted) return;
+
+                            setState(() {});
                           },
                           icon: const Icon(
                             Icons.delete,
@@ -6925,13 +6892,9 @@ class QuizEditorPage extends StatefulWidget {
 class _QuizEditorPageState
     extends State<QuizEditorPage> {
   late final TextEditingController question;
-
   late final TextEditingController option1;
-
   late final TextEditingController option2;
-
   late final TextEditingController option3;
-
   late final TextEditingController option4;
 
   late int correct;
@@ -6990,8 +6953,8 @@ class _QuizEditorPageState
     }
 
     type = clean(
-      q?['quiz_type'],
-    ).isEmpty
+              q?['quiz_type'],
+            ).isEmpty
         ? 'direct'
         : clean(
             q?['quiz_type'],
@@ -7001,10 +6964,19 @@ class _QuizEditorPageState
       q?['image_url'],
     );
 
-    // لا نستخدم ! هنا لأن imageUrl nullable.
     if (imageUrl?.isEmpty ?? true) {
       imageUrl = null;
     }
+  }
+
+  @override
+  void dispose() {
+    question.dispose();
+    option1.dispose();
+    option2.dispose();
+    option3.dispose();
+    option4.dispose();
+    super.dispose();
   }
 
   Future<void> pickImage() async {
@@ -7014,7 +6986,9 @@ class _QuizEditorPageState
       source: ImageSource.gallery,
     );
 
-    if (picked == null || !mounted) return;
+    if (picked == null) return;
+
+    if (!mounted) return;
 
     setState(() {
       imageFile = File(
@@ -7049,18 +7023,17 @@ class _QuizEditorPageState
         );
       }
 
-      if (finalImage == null ||
-          finalImage!.isEmpty) {
+      if (finalImage == null || finalImage.isEmpty) {
         if (!mounted) return;
-
-        setState(() {
-          saving = false;
-        });
 
         showSnack(
           context,
           'أضف صورة لهذا النوع من الأسئلة.',
         );
+
+        setState(() {
+          saving = false;
+        });
 
         return;
       }
@@ -7109,16 +7082,6 @@ class _QuizEditorPageState
         'تعذر حفظ السؤال.',
       );
     }
-  }
-
-  @override
-  void dispose() {
-    question.dispose();
-    option1.dispose();
-    option2.dispose();
-    option3.dispose();
-    option4.dispose();
-    super.dispose();
   }
 
   @override
@@ -7232,8 +7195,7 @@ class _QuizEditorPageState
                 height: 180,
                 fit: BoxFit.contain,
               )
-            else if (imageUrl != null &&
-                imageUrl!.isNotEmpty)
+            else if (imageUrl != null)
               Image.network(
                 imageUrl!,
                 height: 180,
@@ -7258,13 +7220,7 @@ class _QuizEditorPageState
           FilledButton(
             onPressed: saving ? null : save,
             child: saving
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
-                  )
+                ? const CircularProgressIndicator()
                 : const Text(
                     'حفظ السؤال',
                   ),
@@ -7331,8 +7287,7 @@ class _ManageCharactersPageState
                 children: [
                   TextField(
                     controller: name,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'اسم الشخصية',
                     ),
                   ),
@@ -7342,8 +7297,7 @@ class _ManageCharactersPageState
                   TextField(
                     controller: description,
                     maxLines: 3,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'الوصف',
                     ),
                   ),
@@ -7402,15 +7356,13 @@ class _ManageCharactersPageState
                   bool ok;
 
                   if (item == null) {
-                    ok = await widget.data
-                        .addCharacter(
+                    ok = await widget.data.addCharacter(
                       name.text,
                       description.text,
                       imageFile: file,
                     );
                   } else {
-                    ok = await widget.data
-                        .updateCharacter(
+                    ok = await widget.data.updateCharacter(
                       item['id'],
                       name.text,
                       description.text,
@@ -7419,16 +7371,16 @@ class _ManageCharactersPageState
                     );
                   }
 
-                  if (!context.mounted) return;
+                  if (context.mounted) {
+                    Navigator.pop(context);
 
-                  Navigator.pop(context);
-
-                  showSnack(
-                    context,
-                    ok
-                        ? 'تم الحفظ.'
-                        : 'تعذر الحفظ.',
-                  );
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تم الحفظ.'
+                          : 'تعذر الحفظ.',
+                    );
+                  }
                 },
                 child: const Text(
                   'حفظ',
@@ -7487,9 +7439,7 @@ class _ManageCharactersPageState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    onPressed: () => edit(
-                      item,
-                    ),
+                    onPressed: () => edit(item),
                     icon: const Icon(
                       Icons.edit,
                     ),
@@ -7501,9 +7451,9 @@ class _ManageCharactersPageState
                         item['id'],
                       );
 
-                      if (mounted) {
-                        setState(() {});
-                      }
+                      if (!mounted) return;
+
+                      setState(() {});
                     },
                     icon: const Icon(
                       Icons.delete,
@@ -7523,8 +7473,7 @@ class _ManageCharactersPageState
 /// إدارة الأنميات
 /// =======================================================
 
-class ManageAnimePage
-    extends StatefulWidget {
+class ManageAnimePage extends StatefulWidget {
   final AppData data;
 
   const ManageAnimePage({
@@ -7575,8 +7524,7 @@ class _ManageAnimePageState
                 children: [
                   TextField(
                     controller: title,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'اسم الأنمي',
                     ),
                   ),
@@ -7586,8 +7534,7 @@ class _ManageAnimePageState
                   TextField(
                     controller: description,
                     maxLines: 3,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'الوصف',
                     ),
                   ),
@@ -7646,15 +7593,13 @@ class _ManageAnimePageState
                   bool ok;
 
                   if (item == null) {
-                    ok = await widget.data
-                        .addAnime(
+                    ok = await widget.data.addAnime(
                       title.text,
                       description.text,
                       imageFile: file,
                     );
                   } else {
-                    ok = await widget.data
-                        .updateAnime(
+                    ok = await widget.data.updateAnime(
                       item['id'],
                       title.text,
                       description.text,
@@ -7663,16 +7608,16 @@ class _ManageAnimePageState
                     );
                   }
 
-                  if (!context.mounted) return;
+                  if (context.mounted) {
+                    Navigator.pop(context);
 
-                  Navigator.pop(context);
-
-                  showSnack(
-                    context,
-                    ok
-                        ? 'تم الحفظ.'
-                        : 'تعذر الحفظ.',
-                  );
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تم الحفظ.'
+                          : 'تعذر الحفظ.',
+                    );
+                  }
                 },
                 child: const Text(
                   'حفظ',
@@ -7731,9 +7676,7 @@ class _ManageAnimePageState
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    onPressed: () => edit(
-                      item,
-                    ),
+                    onPressed: () => edit(item),
                     icon: const Icon(
                       Icons.edit,
                     ),
@@ -7745,9 +7688,9 @@ class _ManageAnimePageState
                         item['id'],
                       );
 
-                      if (mounted) {
-                        setState(() {});
-                      }
+                      if (!mounted) return;
+
+                      setState(() {});
                     },
                     icon: const Icon(
                       Icons.delete,
@@ -7788,6 +7731,13 @@ class _ManageNewsPageState
 
   File? image;
 
+  @override
+  void dispose() {
+    title.dispose();
+    description.dispose();
+    super.dispose();
+  }
+
   Future<void> add() async {
     title.clear();
     description.clear();
@@ -7806,8 +7756,7 @@ class _ManageNewsPageState
                 children: [
                   TextField(
                     controller: title,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'العنوان',
                     ),
                   ),
@@ -7817,8 +7766,7 @@ class _ManageNewsPageState
                   TextField(
                     controller: description,
                     maxLines: 5,
-                    decoration:
-                        const InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'الوصف',
                     ),
                   ),
@@ -7869,23 +7817,23 @@ class _ManageNewsPageState
               ),
               FilledButton(
                 onPressed: () async {
-                  final ok = await widget.data
-                      .addNews(
+                  final ok =
+                      await widget.data.addNews(
                     title.text,
                     description.text,
                     imageFile: image,
                   );
 
-                  if (!context.mounted) return;
+                  if (context.mounted) {
+                    Navigator.pop(context);
 
-                  Navigator.pop(context);
-
-                  showSnack(
-                    context,
-                    ok
-                        ? 'تمت إضافة الخبر.'
-                        : 'تعذر إضافة الخبر.',
-                  );
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تمت إضافة الخبر.'
+                          : 'تعذر إضافة الخبر.',
+                    );
+                  }
                 },
                 child: const Text(
                   'نشر',
@@ -7900,13 +7848,6 @@ class _ManageNewsPageState
     if (mounted) {
       setState(() {});
     }
-  }
-
-  @override
-  void dispose() {
-    title.dispose();
-    description.dispose();
-    super.dispose();
   }
 
   @override
@@ -7928,8 +7869,7 @@ class _ManageNewsPageState
         padding: const EdgeInsets.all(12),
         itemCount: widget.data.news.length,
         itemBuilder: (_, index) {
-          final item =
-              widget.data.news[index];
+          final item = widget.data.news[index];
 
           return Card(
             child: ListTile(
@@ -7943,8 +7883,7 @@ class _ManageNewsPageState
                   item['description'],
                 ),
                 maxLines: 2,
-                overflow:
-                    TextOverflow.ellipsis,
+                overflow: TextOverflow.ellipsis,
               ),
               trailing: IconButton(
                 onPressed: () async {
@@ -7952,9 +7891,9 @@ class _ManageNewsPageState
                     item['id'],
                   );
 
-                  if (mounted) {
-                    setState(() {});
-                  }
+                  if (!mounted) return;
+
+                  setState(() {});
                 },
                 icon: const Icon(
                   Icons.delete,
@@ -7992,12 +7931,15 @@ class _ManageNotificationsPageState
 
   final body = TextEditingController();
 
+  @override
+  void dispose() {
+    title.dispose();
+    body.dispose();
+    super.dispose();
+  }
+
   Future<void> add() async {
     if (title.text.trim().isEmpty) {
-      showSnack(
-        context,
-        'أدخل عنوان الإشعار.',
-      );
       return;
     }
 
@@ -8019,13 +7961,6 @@ class _ManageNotificationsPageState
       title.clear();
       body.clear();
     }
-  }
-
-  @override
-  void dispose() {
-    title.dispose();
-    body.dispose();
-    super.dispose();
   }
 
   @override
@@ -8101,6 +8036,17 @@ class _ManagePollPageState
     (_) => TextEditingController(),
   );
 
+  @override
+  void dispose() {
+    question.dispose();
+
+    for (final controller in options) {
+      controller.dispose();
+    }
+
+    super.dispose();
+  }
+
   Future<void> create() async {
     final values = options
         .map(
@@ -8143,17 +8089,6 @@ class _ManagePollPageState
 
       setState(() {});
     }
-  }
-
-  @override
-  void dispose() {
-    question.dispose();
-
-    for (final item in options) {
-      item.dispose();
-    }
-
-    super.dispose();
   }
 
   @override
@@ -8253,9 +8188,9 @@ class _ManagePointsPageState
     );
 
     final accountId = TextEditingController(
-      text: player?['account_id']
-              ?.toString() ??
-          '',
+      text:
+          player?['account_id']?.toString() ??
+              '',
     );
 
     await showDialog(
@@ -8271,8 +8206,7 @@ class _ManagePointsPageState
             children: [
               TextField(
                 controller: name,
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'اسم المستخدم',
                 ),
               ),
@@ -8287,10 +8221,8 @@ class _ManagePointsPageState
                   FilteringTextInputFormatter
                       .digitsOnly,
                 ],
-                decoration:
-                    const InputDecoration(
-                  labelText:
-                      'معرف الحساب الفريد',
+                decoration: const InputDecoration(
+                  labelText: 'معرف الحساب الفريد',
                 ),
               ),
               const SizedBox(
@@ -8304,8 +8236,7 @@ class _ManagePointsPageState
                   FilteringTextInputFormatter
                       .digitsOnly,
                 ],
-                decoration:
-                    const InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'النقاط',
                 ),
               ),
@@ -8344,8 +8275,7 @@ class _ManagePointsPageState
                   accountId: parsedId,
                 );
               } else {
-                ok = await widget.data
-                    .updatePlayer(
+                ok = await widget.data.updatePlayer(
                   player['id'],
                   name.text,
                   parsedPoints,
@@ -8353,16 +8283,16 @@ class _ManagePointsPageState
                 );
               }
 
-              if (!context.mounted) return;
+              if (context.mounted) {
+                Navigator.pop(context);
 
-              Navigator.pop(context);
-
-              showSnack(
-                context,
-                ok
-                    ? 'تم حفظ الحساب.'
-                    : 'فشل الحفظ. قد يكون معرف الحساب مستخدماً بالفعل.',
-              );
+                showSnack(
+                  context,
+                  ok
+                      ? 'تم حفظ الحساب.'
+                      : 'فشل الحفظ. قد يكون معرف الحساب مستخدماً بالفعل.',
+                );
+              }
             },
             child: const Text(
               'حفظ',
@@ -8434,14 +8364,13 @@ class _ManagePointsPageState
                   ),
                   IconButton(
                     onPressed: () async {
-                      await widget.data
-                          .deletePlayer(
+                      await widget.data.deletePlayer(
                         player['id'],
                       );
 
-                      if (mounted) {
-                        setState(() {});
-                      }
+                      if (!mounted) return;
+
+                      setState(() {});
                     },
                     icon: const Icon(
                       Icons.delete,
@@ -8461,8 +8390,7 @@ class _ManagePointsPageState
 /// إدارة كل جديد
 /// =======================================================
 
-class ManageLatestPage
-    extends StatefulWidget {
+class ManageLatestPage extends StatefulWidget {
   final AppData data;
 
   const ManageLatestPage({
@@ -8481,15 +8409,14 @@ class _ManageLatestPageState
 
   final description = TextEditingController();
 
-  Future<void> add() async {
-    if (title.text.trim().isEmpty) {
-      showSnack(
-        context,
-        'أدخل العنوان.',
-      );
-      return;
-    }
+  @override
+  void dispose() {
+    title.dispose();
+    description.dispose();
+    super.dispose();
+  }
 
+  Future<void> add() async {
     final ok = await widget.data.addLatest(
       title.text,
       description.text,
@@ -8507,16 +8434,8 @@ class _ManageLatestPageState
     if (ok) {
       title.clear();
       description.clear();
-
       setState(() {});
     }
-  }
-
-  @override
-  void dispose() {
-    title.dispose();
-    description.dispose();
-    super.dispose();
   }
 
   @override
@@ -8574,14 +8493,13 @@ class _ManageLatestPageState
                   ),
                   trailing: IconButton(
                     onPressed: () async {
-                      await widget.data
-                          .deleteLatest(
+                      await widget.data.deleteLatest(
                         item['id'],
                       );
 
-                      if (mounted) {
-                        setState(() {});
-                      }
+                      if (!mounted) return;
+
+                      setState(() {});
                     },
                     icon: const Icon(
                       Icons.delete,
@@ -8646,14 +8564,13 @@ class _ManageMessagesPageState
               ),
               trailing: IconButton(
                 onPressed: () async {
-                  await widget.data
-                      .deleteMessage(
+                  await widget.data.deleteMessage(
                     item['id'],
                   );
 
-                  if (mounted) {
-                    setState(() {});
-                  }
+                  if (!mounted) return;
+
+                  setState(() {});
                 },
                 icon: const Icon(
                   Icons.delete,
@@ -8681,9 +8598,8 @@ class ManagePurchaseRequestsPage
   });
 
   @override
-  State<ManagePurchaseRequestsPage>
-      createState() =>
-          _ManagePurchaseRequestsPageState();
+  State<ManagePurchaseRequestsPage> createState() =>
+      _ManagePurchaseRequestsPageState();
 }
 
 class _ManagePurchaseRequestsPageState
@@ -8723,9 +8639,9 @@ class _ManagePurchaseRequestsPageState
               itemCount:
                   widget.data.purchaseRequests.length,
               itemBuilder: (_, index) {
-                final item = widget
-                    .data
-                    .purchaseRequests[index];
+                final item =
+                    widget.data.purchaseRequests[
+                        index];
 
                 final status = clean(
                   item['status'],
@@ -8808,9 +8724,7 @@ void showSnack(
 ) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(
-        message,
-      ),
+      content: Text(message),
       behavior: SnackBarBehavior.floating,
     ),
   );
