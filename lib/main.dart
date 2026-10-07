@@ -113,8 +113,7 @@ BadgeInfo? getCurrentBadge(int points) {
 Future<bool> checkAdminSession() async {
   final prefs = await SharedPreferences.getInstance();
 
-  final saved =
-      prefs.getBool('mr_otaku_admin_session') ?? false;
+  final saved = prefs.getBool('mr_otaku_admin_session') ?? false;
 
   if (!saved) return false;
 
@@ -183,8 +182,7 @@ class AppData extends ChangeNotifier {
   bool get isAdmin => _isAdmin;
 
   bool get hasAccount =>
-      currentAccountId != null &&
-      currentUserName.trim().isNotEmpty;
+      currentAccountId != null && currentUserName.trim().isNotEmpty;
 
   bool get hasQuizQuestions => quizQuestions.isNotEmpty;
 
@@ -206,17 +204,11 @@ class AppData extends ChangeNotifier {
     return null;
   }
 
-  int get currentPoints {
-    return toInt(currentPlayer?['points']);
-  }
+  int get currentPoints => toInt(currentPlayer?['points']);
 
-  String get currentLevel {
-    return getUserLevel(currentPoints);
-  }
+  String get currentLevel => getUserLevel(currentPoints);
 
-  BadgeInfo? get currentBadge {
-    return getCurrentBadge(currentPoints);
-  }
+  BadgeInfo? get currentBadge => getCurrentBadge(currentPoints);
 
   Map<String, dynamic>? get leader {
     if (players.isEmpty) return null;
@@ -224,8 +216,7 @@ class AppData extends ChangeNotifier {
     final sorted = [...players];
 
     sorted.sort(
-      (a, b) =>
-          toInt(b['points']).compareTo(toInt(a['points'])),
+      (a, b) => toInt(b['points']).compareTo(toInt(a['points'])),
     );
 
     return sorted.first;
@@ -235,15 +226,12 @@ class AppData extends ChangeNotifier {
     _isAdmin = value;
 
     final prefs = await SharedPreferences.getInstance();
-
     await prefs.setBool('mr_otaku_admin_session', value);
 
     notifyListeners();
   }
 
-  /// =====================================================
-  /// الحساب
-  /// =====================================================
+  /// ===================== الحساب =====================
 
   Future<void> loadLocalAccount() async {
     final prefs = await SharedPreferences.getInstance();
@@ -256,9 +244,7 @@ class AppData extends ChangeNotifier {
   }
 
   Future<bool> loginAccount(String name, int accountId) async {
-    if (name.trim().isEmpty || accountId <= 0) {
-      return false;
-    }
+    if (name.trim().isEmpty || accountId <= 0) return false;
 
     try {
       final player = await supabase
@@ -281,7 +267,6 @@ class AppData extends ChangeNotifier {
         'mr_otaku_account_id',
         accountId.toString(),
       );
-
       await prefs.setString('mr_otaku_user_name', savedName);
 
       currentAccountId = accountId;
@@ -307,9 +292,7 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// =====================================================
-  /// تحميل البيانات
-  /// =====================================================
+  /// ===================== تحميل البيانات =====================
 
   Future<void> loadData() async {
     loading = true;
@@ -317,18 +300,9 @@ class AppData extends ChangeNotifier {
 
     try {
       final results = await Future.wait([
-        supabase
-            .from('news')
-            .select()
-            .order('created_at', ascending: false),
-        supabase
-            .from('players')
-            .select()
-            .order('points', ascending: false),
-        supabase
-            .from('latest')
-            .select()
-            .order('created_at', ascending: false),
+        supabase.from('news').select().order('created_at', ascending: false),
+        supabase.from('players').select().order('points', ascending: false),
+        supabase.from('latest').select().order('created_at', ascending: false),
       ]);
 
       news = List<Map<String, dynamic>>.from(results[0]);
@@ -371,9 +345,7 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// =====================================================
-  /// Client ID
-  /// =====================================================
+  /// ===================== Client ID =====================
 
   Future<String> getClientId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -388,9 +360,7 @@ class AppData extends ChangeNotifier {
     return id;
   }
 
-  /// =====================================================
-  /// الإعجابات
-  /// =====================================================
+  /// ===================== الإعجابات =====================
 
   Future<void> loadLikes() async {
     try {
@@ -430,9 +400,7 @@ class AppData extends ChangeNotifier {
             .eq('client_id', clientId);
 
         likedNews.remove(key);
-
-        likeCounts[newsId] =
-            max(0, (likeCounts[newsId] ?? 1) - 1);
+        likeCounts[newsId] = max(0, (likeCounts[newsId] ?? 1) - 1);
       } else {
         await supabase.from('news_likes').insert({
           'news_id': newsId,
@@ -451,9 +419,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// التعليقات
-  /// =====================================================
+  /// ===================== التعليقات =====================
 
   Future<void> loadCommentCounts() async {
     try {
@@ -520,9 +486,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الإشعارات
-  /// =====================================================
+  /// ===================== الإشعارات =====================
 
   Future<void> loadNotifications() async {
     try {
@@ -577,9 +541,7 @@ class AppData extends ChangeNotifier {
   }
 
   Future<bool> addNotification(String title, String body) async {
-    if (!_isAdmin || title.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || title.trim().isEmpty) return false;
 
     try {
       await supabase.from('notifications').insert({
@@ -596,9 +558,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الاستطلاع
-  /// =====================================================
+  /// ===================== الاستطلاع =====================
 
   Future<void> loadPoll() async {
     try {
@@ -626,8 +586,7 @@ class AppData extends ChangeNotifier {
           .eq('poll_id', pollId)
           .order('position', ascending: true);
 
-      activePollOptions =
-          List<Map<String, dynamic>>.from(options);
+      activePollOptions = List<Map<String, dynamic>>.from(options);
 
       final votes = await supabase
           .from('poll_votes')
@@ -665,16 +624,11 @@ class AppData extends ChangeNotifier {
 
   double getPollPercentage(dynamic optionId) {
     if (totalPollVotes == 0) return 0;
-
-    return (pollVoteCounts[optionId] ?? 0) /
-        totalPollVotes *
-        100;
+    return (pollVoteCounts[optionId] ?? 0) / totalPollVotes * 100;
   }
 
   Future<bool> votePoll(dynamic optionId) async {
-    if (activePoll == null || hasVotedInActivePoll) {
-      return false;
-    }
+    if (activePoll == null || hasVotedInActivePoll) return false;
 
     try {
       final clientId = await getClientId();
@@ -686,8 +640,7 @@ class AppData extends ChangeNotifier {
       });
 
       votedPollId = clean(activePoll!['id']);
-      pollVoteCounts[optionId] =
-          (pollVoteCounts[optionId] ?? 0) + 1;
+      pollVoteCounts[optionId] = (pollVoteCounts[optionId] ?? 0) + 1;
 
       notifyListeners();
       return true;
@@ -701,9 +654,7 @@ class AppData extends ChangeNotifier {
     String question,
     List<String> options,
   ) async {
-    if (!_isAdmin ||
-        question.trim().isEmpty ||
-        options.length < 2) {
+    if (!_isAdmin || question.trim().isEmpty || options.length < 2) {
       return false;
     }
 
@@ -715,10 +666,7 @@ class AppData extends ChangeNotifier {
 
       final poll = await supabase
           .from('polls')
-          .insert({
-            'question': question.trim(),
-            'active': true,
-          })
+          .insert({'question': question.trim(), 'active': true})
           .select()
           .single();
 
@@ -741,9 +689,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الأسئلة
-  /// =====================================================
+  /// ===================== الأسئلة =====================
 
   Future<void> loadQuizQuestions() async {
     try {
@@ -860,7 +806,6 @@ class AppData extends ChangeNotifier {
 
     try {
       final extension = file.path.split('.').last.toLowerCase();
-
       final path =
           'quiz/${DateTime.now().millisecondsSinceEpoch}.$extension';
 
@@ -877,18 +822,14 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الأخبار
-  /// =====================================================
+  /// ===================== الأخبار =====================
 
   Future<bool> addNews(
     String title,
     String description, {
     File? imageFile,
   }) async {
-    if (!_isAdmin || title.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || title.trim().isEmpty) return false;
 
     try {
       String? imageUrl;
@@ -896,7 +837,6 @@ class AppData extends ChangeNotifier {
       if (imageFile != null) {
         final extension =
             imageFile.path.split('.').last.toLowerCase();
-
         final path =
             'news_${DateTime.now().millisecondsSinceEpoch}.$extension';
 
@@ -936,18 +876,14 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// اللاعبين والحسابات
-  /// =====================================================
+  /// ===================== اللاعبين =====================
 
   Future<bool> addPlayer(
     String name,
     int points, {
     int? accountId,
   }) async {
-    if (!_isAdmin || name.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || name.trim().isEmpty) return false;
 
     try {
       if (accountId != null) {
@@ -982,9 +918,7 @@ class AppData extends ChangeNotifier {
     int points, {
     int? accountId,
   }) async {
-    if (!_isAdmin || name.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || name.trim().isEmpty) return false;
 
     try {
       if (accountId != null) {
@@ -994,8 +928,7 @@ class AppData extends ChangeNotifier {
             .eq('account_id', accountId)
             .maybeSingle();
 
-        if (existing != null &&
-            clean(existing['id']) != clean(id)) {
+        if (existing != null && clean(existing['id']) != clean(id)) {
           return false;
         }
       }
@@ -1029,17 +962,10 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// كل جديد
-  /// =====================================================
+  /// ===================== كل جديد =====================
 
-  Future<bool> addLatest(
-    String title,
-    String description,
-  ) async {
-    if (!_isAdmin || title.trim().isEmpty) {
-      return false;
-    }
+  Future<bool> addLatest(String title, String description) async {
+    if (!_isAdmin || title.trim().isEmpty) return false;
 
     try {
       await supabase.from('latest').insert({
@@ -1066,9 +992,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الرسائل القديمة
-  /// =====================================================
+  /// ===================== الرسائل =====================
 
   Future<bool> sendMessage(String name, String message) async {
     if (message.trim().isEmpty) return false;
@@ -1101,9 +1025,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// المشتريات
-  /// =====================================================
+  /// ===================== المشتريات =====================
 
   Future<bool> createPurchaseRequest(
     dynamic playerId,
@@ -1124,12 +1046,8 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<bool> approvePurchase(
-    Map<String, dynamic> request,
-  ) async {
-    if (!_isAdmin || request['status'] != 'pending') {
-      return false;
-    }
+  Future<bool> approvePurchase(Map<String, dynamic> request) async {
+    if (!_isAdmin || request['status'] != 'pending') return false;
 
     try {
       final playerId = request['player_id'];
@@ -1180,9 +1098,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الشخصيات
-  /// =====================================================
+  /// ===================== الشخصيات =====================
 
   Future<void> loadRatingCharacters() async {
     try {
@@ -1191,8 +1107,7 @@ class AppData extends ChangeNotifier {
           .select()
           .order('created_at', ascending: false);
 
-      ratingCharacters =
-          List<Map<String, dynamic>>.from(result);
+      ratingCharacters = List<Map<String, dynamic>>.from(result);
     } catch (e) {
       ratingCharacters = [];
     }
@@ -1203,16 +1118,13 @@ class AppData extends ChangeNotifier {
     String description, {
     File? imageFile,
   }) async {
-    if (!_isAdmin || name.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || name.trim().isEmpty) return false;
 
     try {
       String? imageUrl;
 
       if (imageFile != null) {
-        imageUrl =
-            await uploadGeneralImage(imageFile, 'characters');
+        imageUrl = await uploadGeneralImage(imageFile, 'characters');
       }
 
       await supabase.from('rating_characters').insert({
@@ -1242,8 +1154,7 @@ class AppData extends ChangeNotifier {
       String? finalImage = imageUrl;
 
       if (imageFile != null) {
-        finalImage =
-            await uploadGeneralImage(imageFile, 'characters');
+        finalImage = await uploadGeneralImage(imageFile, 'characters');
       }
 
       await supabase
@@ -1280,9 +1191,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الأنميات
-  /// =====================================================
+  /// ===================== الأنميات =====================
 
   Future<void> loadRatingAnime() async {
     try {
@@ -1302,9 +1211,7 @@ class AppData extends ChangeNotifier {
     String description, {
     File? imageFile,
   }) async {
-    if (!_isAdmin || title.trim().isEmpty) {
-      return false;
-    }
+    if (!_isAdmin || title.trim().isEmpty) return false;
 
     try {
       String? imageUrl;
@@ -1364,11 +1271,7 @@ class AppData extends ChangeNotifier {
     if (!_isAdmin) return false;
 
     try {
-      await supabase
-          .from('rating_anime')
-          .delete()
-          .eq('id', id);
-
+      await supabase.from('rating_anime').delete().eq('id', id);
       await loadRatingAnime();
       notifyListeners();
       return true;
@@ -1383,7 +1286,6 @@ class AppData extends ChangeNotifier {
   ) async {
     try {
       final extension = file.path.split('.').last.toLowerCase();
-
       final path =
           '$folder/${DateTime.now().millisecondsSinceEpoch}.$extension';
 
@@ -1399,9 +1301,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// التقييمات
-  /// =====================================================
+  /// ===================== التقييمات =====================
 
   Future<double> characterAverage(dynamic characterId) async {
     try {
@@ -1413,7 +1313,6 @@ class AppData extends ChangeNotifier {
       if (result.isEmpty) return 0;
 
       double sum = 0;
-
       for (final row in result) {
         sum += toDouble(row['rating']);
       }
@@ -1434,7 +1333,6 @@ class AppData extends ChangeNotifier {
       if (result.isEmpty) return 0;
 
       double sum = 0;
-
       for (final row in result) {
         sum += toDouble(row['rating']);
       }
@@ -1445,48 +1343,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<double?> myCharacterRating(dynamic characterId) async {
-    if (currentAccountId == null) return null;
-
-    try {
-      final result = await supabase
-          .from('character_ratings')
-          .select('rating')
-          .eq('character_id', characterId)
-          .eq('account_id', currentAccountId!)
-          .maybeSingle();
-
-      if (result == null) return null;
-
-      return toDouble(result['rating']);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<double?> myAnimeRating(dynamic animeId) async {
-    if (currentAccountId == null) return null;
-
-    try {
-      final result = await supabase
-          .from('anime_ratings')
-          .select('rating')
-          .eq('anime_id', animeId)
-          .eq('account_id', currentAccountId!)
-          .maybeSingle();
-
-      if (result == null) return null;
-
-      return toDouble(result['rating']);
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<bool> rateCharacter(
-    dynamic characterId,
-    double rating,
-  ) async {
+  Future<bool> rateCharacter(dynamic characterId, double rating) async {
     if (currentAccountId == null) return false;
 
     if (rating < 0 ||
@@ -1510,10 +1367,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<bool> rateAnime(
-    dynamic animeId,
-    double rating,
-  ) async {
+  Future<bool> rateAnime(dynamic animeId, double rating) async {
     if (currentAccountId == null) return false;
 
     if (rating < 0 ||
@@ -1537,27 +1391,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// المفضلة
-  /// =====================================================
-
-  Future<bool> isFavorite(String type, dynamic id) async {
-    if (currentAccountId == null) return false;
-
-    try {
-      final result = await supabase
-          .from('favorites')
-          .select('id')
-          .eq('account_id', currentAccountId!)
-          .eq('item_type', type)
-          .eq('item_id', id)
-          .maybeSingle();
-
-      return result != null;
-    } catch (e) {
-      return false;
-    }
-  }
+  /// ===================== المفضلة =====================
 
   Future<bool> toggleFavorite(String type, dynamic id) async {
     if (currentAccountId == null) return false;
@@ -1591,9 +1425,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getFavorites(
-    String type,
-  ) async {
+  Future<List<Map<String, dynamic>>> getFavorites(String type) async {
     if (currentAccountId == null) return [];
 
     try {
@@ -1610,9 +1442,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// =====================================================
-  /// الدردشة العامة
-  /// =====================================================
+  /// ===================== الدردشة =====================
 
   Future<void> loadPublicChat() async {
     try {
@@ -1652,11 +1482,7 @@ class AppData extends ChangeNotifier {
     if (!_isAdmin) return false;
 
     try {
-      await supabase
-          .from('public_chat')
-          .delete()
-          .eq('id', id);
-
+      await supabase.from('public_chat').delete().eq('id', id);
       await loadPublicChat();
       notifyListeners();
       return true;
@@ -1665,7 +1491,6 @@ class AppData extends ChangeNotifier {
     }
   }
 }
-
 
 /// =======================================================
 /// التطبيق
@@ -1680,7 +1505,6 @@ class MrOtakuApp extends StatefulWidget {
 
 class _MrOtakuAppState extends State<MrOtakuApp> {
   final AppData data = AppData();
-
   bool checking = true;
 
   @override
@@ -1746,9 +1570,7 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
         debugShowCheckedModeBanner: false,
         theme: theme,
         home: const Scaffold(
-          body: Center(
-            child: CircularProgressIndicator(),
-          ),
+          body: Center(child: CircularProgressIndicator()),
         ),
       );
     }
@@ -1860,10 +1682,7 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    const Icon(
-                      Icons.auto_awesome,
-                      size: 75,
-                    ),
+                    const Icon(Icons.auto_awesome, size: 75),
                     const SizedBox(height: 15),
                     const Text(
                       'مستر أوتاكو',
@@ -1960,10 +1779,7 @@ class _HomePageState extends State<HomePage> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: index,
-        children: pages,
-      ),
+      body: IndexedStack(index: index, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (value) async {
@@ -1993,8 +1809,7 @@ class _HomePageState extends State<HomePage> {
           ),
           NavigationDestination(
             icon: Badge(
-              isLabelVisible:
-                  widget.data.unreadNotificationCount > 0,
+              isLabelVisible: widget.data.unreadNotificationCount > 0,
               label: Text(
                 widget.data.unreadNotificationCount.toString(),
               ),
@@ -2088,15 +1903,12 @@ class _HomeTabState extends State<HomeTab> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => NotificationsPage(
-                    data: widget.data,
-                  ),
+                  builder: (_) => NotificationsPage(data: widget.data),
                 ),
               );
             },
             icon: Badge(
-              isLabelVisible:
-                  widget.data.unreadNotificationCount > 0,
+              isLabelVisible: widget.data.unreadNotificationCount > 0,
               label: Text(
                 widget.data.unreadNotificationCount.toString(),
               ),
@@ -2138,10 +1950,7 @@ class _HomeTabState extends State<HomeTab> {
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    const Icon(
-                      Icons.auto_awesome,
-                      size: 60,
-                    ),
+                    const Icon(Icons.auto_awesome, size: 60),
                     const SizedBox(height: 10),
                     Text(
                       'مرحباً ${widget.data.currentUserName}',
@@ -2152,17 +1961,14 @@ class _HomeTabState extends State<HomeTab> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'مجتمع ومسابقات وأخبار الأنمي',
-                    ),
+                    const Text('مجتمع ومسابقات وأخبار الأنمي'),
                     const SizedBox(height: 14),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         _MiniStat(
                           title: 'النقاط',
-                          value:
-                              widget.data.currentPoints.toString(),
+                          value: widget.data.currentPoints.toString(),
                         ),
                         const SizedBox(width: 25),
                         _MiniStat(
@@ -2187,9 +1993,7 @@ class _HomeTabState extends State<HomeTab> {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   subtitle: Text(clean(leader['name'])),
-                  trailing: Text(
-                    '${toInt(leader['points'])} نقطة',
-                  ),
+                  trailing: Text('${toInt(leader['points'])} نقطة'),
                 ),
               ),
             const SizedBox(height: 16),
@@ -2422,10 +2226,7 @@ class NewsDetailsPage extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             clean(news['description']),
-            style: const TextStyle(
-              fontSize: 17,
-              height: 1.6,
-            ),
+            style: const TextStyle(fontSize: 17, height: 1.6),
           ),
         ],
       ),
@@ -2607,9 +2408,7 @@ class NewsCard extends StatelessWidget {
                         await data.toggleLike(id);
                       },
                       icon: Icon(
-                        liked
-                            ? Icons.favorite
-                            : Icons.favorite_border,
+                        liked ? Icons.favorite : Icons.favorite_border,
                       ),
                     ),
                     Text('${data.likeCounts[id] ?? 0}'),
@@ -2675,8 +2474,7 @@ class _CommentsPageState extends State<CommentsPage> {
   }
 
   Future<void> load() async {
-    final result =
-        await widget.data.getComments(widget.newsId);
+    final result = await widget.data.getComments(widget.newsId);
 
     if (!mounted) return;
 
@@ -2809,7 +2607,6 @@ class NotificationsPage extends StatelessWidget {
               itemBuilder: (_, index) {
                 final item = data.notifications[index];
                 final id = item['id'];
-
                 final read = data._readNotifications
                     .contains(id.toString());
 
@@ -2838,7 +2635,6 @@ class NotificationsPage extends StatelessWidget {
   }
 }
 
-
 /// =======================================================
 /// الخدمات
 /// =======================================================
@@ -2864,9 +2660,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'ثلاثة أنواع من الأسئلة',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2881,9 +2675,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'قيّم الشخصيات والأنميات',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2898,9 +2690,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'الشخصيات والأنميات المفضلة',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2915,9 +2705,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'تحدث مع مجتمع مستر أوتاكو',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2932,9 +2720,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'اقفز فوق الصخور وحطم رقمك',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2949,9 +2735,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'شاهد ترتيب لاعبي الأوتاكو',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2966,9 +2750,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'استخدم نقاطك للحصول على المزايا',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -2983,9 +2765,7 @@ class ServicesPage extends StatelessWidget {
             subtitle: 'تواصل مع إدارة مستر أوتاكو',
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
-
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3046,7 +2826,6 @@ class QuestionsHubPage extends StatelessWidget {
 
   Future<void> open(BuildContext context, String type) async {
     await playClickSound();
-
     await data.loadQuizQuestions();
 
     if (!context.mounted) return;
@@ -3054,10 +2833,7 @@ class QuestionsHubPage extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => QuizPage(
-          data: data,
-          typeFilter: type,
-        ),
+        builder: (_) => QuizPage(data: data, typeFilter: type),
       ),
     );
   }
@@ -3166,10 +2942,7 @@ class _QuizPageState extends State<QuizPage> {
   }
 
   Map<String, dynamic>? get currentQuestion {
-    if (questions.isEmpty || current >= questions.length) {
-      return null;
-    }
-
+    if (questions.isEmpty || current >= questions.length) return null;
     return questions[current];
   }
 
@@ -3243,9 +3016,7 @@ class _QuizPageState extends State<QuizPage> {
     final correct = toInt(q['correct_option']);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(quizTypeName(widget.typeFilter)),
-      ),
+      appBar: AppBar(title: Text(quizTypeName(widget.typeFilter))),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -3532,8 +3303,7 @@ class CharacterRatingsList extends StatefulWidget {
       _CharacterRatingsListState();
 }
 
-class _CharacterRatingsListState
-    extends State<CharacterRatingsList> {
+class _CharacterRatingsListState extends State<CharacterRatingsList> {
   Map<dynamic, double> averages = {};
 
   @override
@@ -3618,8 +3388,7 @@ class AnimeRatingsList extends StatefulWidget {
   });
 
   @override
-  State<AnimeRatingsList> createState() =>
-      _AnimeRatingsListState();
+  State<AnimeRatingsList> createState() => _AnimeRatingsListState();
 }
 
 class _AnimeRatingsListState extends State<AnimeRatingsList> {
@@ -3900,7 +3669,6 @@ class _FavoritesPageState extends State<FavoritesPage>
   Future<void> load() async {
     final characters =
         await widget.data.getFavorites('character');
-
     final anime = await widget.data.getFavorites('anime');
 
     if (!mounted) return;
@@ -4008,12 +3776,7 @@ class FavoritesList extends StatelessWidget {
                     trailing: IconButton(
                       onPressed: () async {
                         await playClickSound();
-
-                        await data.toggleFavorite(
-                          type,
-                          item['id'],
-                        );
-
+                        await data.toggleFavorite(type, item['id']);
                         await onRefresh();
                       },
                       icon: const Icon(Icons.favorite),
@@ -4071,8 +3834,7 @@ class _PublicChatPageState extends State<PublicChatPage> {
 
     await playClickSound();
 
-    final ok =
-        await widget.data.sendPublicChat(controller.text);
+    final ok = await widget.data.sendPublicChat(controller.text);
 
     if (!mounted) return;
 
@@ -4103,9 +3865,7 @@ class _PublicChatPageState extends State<PublicChatPage> {
         children: [
           Expanded(
             child: widget.data.publicChat.isEmpty
-                ? const Center(
-                    child: Text('لا توجد رسائل بعد.'),
-                  )
+                ? const Center(child: Text('لا توجد رسائل بعد.'))
                 : ListView.builder(
                     reverse: true,
                     padding: const EdgeInsets.all(12),
@@ -4139,15 +3899,9 @@ class _PublicChatPageState extends State<PublicChatPage> {
                                   IconButton(
                                     onPressed: () async {
                                       await playClickSound();
-
                                       await widget.data
-                                          .deletePublicChat(
-                                        item['id'],
-                                      );
-
-                                      if (mounted) {
-                                        setState(() {});
-                                      }
+                                          .deletePublicChat(item['id']);
+                                      if (mounted) setState(() {});
                                     },
                                     icon: const Icon(Icons.delete),
                                   ),
@@ -4268,9 +4022,7 @@ class _JumpGamePageState extends State<JumpGamePage> {
       velocity = 0;
     }
 
-    final difficulty =
-        0.018 + min(score * 0.0007, 0.018);
-
+    final difficulty = 0.018 + min(score * 0.0007, 0.018);
     rockX -= difficulty;
 
     if (rockX < -1.2) {
@@ -4285,10 +4037,7 @@ class _JumpGamePageState extends State<JumpGamePage> {
       return;
     }
 
-    if (DateTime.now()
-            .difference(lastScore)
-            .inMilliseconds >
-        900) {
+    if (DateTime.now().difference(lastScore).inMilliseconds > 900) {
       lastScore = DateTime.now();
 
       setState(() {
@@ -4395,9 +4144,7 @@ class _JumpGamePageState extends State<JumpGamePage> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      const Text(
-                        'اضغط على الشاشة للقفز فوق الصخور',
-                      ),
+                      const Text('اضغط على الشاشة للقفز فوق الصخور'),
                     ],
                   ),
                 ),
@@ -4425,8 +4172,7 @@ class JumpPainter extends CustomPainter {
 
     const playerHeight = 55.0;
 
-    final py =
-        groundY - playerY * size.height * 0.75 - playerHeight;
+    final py = groundY - playerY * size.height * 0.75 - playerHeight;
 
     final player = Paint()..style = PaintingStyle.fill;
 
@@ -4439,7 +4185,6 @@ class JumpPainter extends CustomPainter {
     );
 
     final rockPaint = Paint()..style = PaintingStyle.fill;
-
     final rockXPosition = size.width * ((rockX + 1) / 2);
 
     final rockRect = Rect.fromLTWH(
@@ -4489,8 +4234,7 @@ class LeaderboardPage extends StatelessWidget {
     final list = [...data.players];
 
     list.sort(
-      (a, b) =>
-          toInt(b['points']).compareTo(toInt(a['points'])),
+      (a, b) => toInt(b['points']).compareTo(toInt(a['points'])),
     );
 
     return Scaffold(
@@ -4507,9 +4251,7 @@ class LeaderboardPage extends StatelessWidget {
 
                 return Card(
                   child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text('${index + 1}'),
-                    ),
+                    leading: CircleAvatar(child: Text('${index + 1}')),
                     title: Text(clean(player['name'])),
                     subtitle: Text(
                       'المستوى ${getUserLevel(points)}'
@@ -4517,9 +4259,7 @@ class LeaderboardPage extends StatelessWidget {
                     ),
                     trailing: Text(
                       '$points نقطة',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                 );
@@ -4577,9 +4317,7 @@ class _ShopPageState extends State<ShopPage> {
 
     showSnack(
       context,
-      ok
-          ? 'تم إرسال طلب الشراء للإدارة.'
-          : 'تعذر إرسال الطلب.',
+      ok ? 'تم إرسال طلب الشراء للإدارة.' : 'تعذر إرسال الطلب.',
     );
   }
 
@@ -4593,9 +4331,7 @@ class _ShopPageState extends State<ShopPage> {
           if (selectedPlayer != null)
             Card(
               child: ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.person),
-                ),
+                leading: const CircleAvatar(child: Icon(Icons.person)),
                 title: Text(clean(selectedPlayer!['name'])),
                 subtitle: Text(
                   '${toInt(selectedPlayer!['points'])} نقطة',
@@ -4667,8 +4403,7 @@ class SendMessagePage extends StatefulWidget {
   });
 
   @override
-  State<SendMessagePage> createState() =>
-      _SendMessagePageState();
+  State<SendMessagePage> createState() => _SendMessagePageState();
 }
 
 class _SendMessagePageState extends State<SendMessagePage> {
@@ -4848,8 +4583,7 @@ class AdminLoginPage extends StatefulWidget {
   });
 
   @override
-  State<AdminLoginPage> createState() =>
-      _AdminLoginPageState();
+  State<AdminLoginPage> createState() => _AdminLoginPageState();
 }
 
 class _AdminLoginPageState extends State<AdminLoginPage> {
@@ -4865,9 +4599,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   }
 
   Future<void> login() async {
-    if (email.text.trim().isEmpty || password.text.isEmpty) {
-      return;
-    }
+    if (email.text.trim().isEmpty || password.text.isEmpty) return;
 
     setState(() {
       loading = true;
@@ -5078,8 +4810,7 @@ class AdminPanelPage extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) =>
-                      ManageNotificationsPage(data: data),
+                  builder: (_) => ManageNotificationsPage(data: data),
                 ),
               );
             },
@@ -5271,7 +5002,6 @@ class _ManageQuizPageState extends State<ManageQuizPage> {
                           onPressed: () async {
                             await widget.data
                                 .deleteQuizQuestion(q['id']);
-
                             if (!mounted) return;
                             setState(() {});
                           },
@@ -5302,8 +5032,7 @@ class QuizEditorPage extends StatefulWidget {
   });
 
   @override
-  State<QuizEditorPage> createState() =>
-      _QuizEditorPageState();
+  State<QuizEditorPage> createState() => _QuizEditorPageState();
 }
 
 class _QuizEditorPageState extends State<QuizEditorPage> {
@@ -5314,9 +5043,7 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
   late final TextEditingController option4;
 
   late int correct;
-
   String type = 'direct';
-
   File? imageFile;
   String? imageUrl;
   bool saving = false;
@@ -5370,7 +5097,6 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
     );
 
     if (picked == null) return;
-
     if (!mounted) return;
 
     setState(() {
@@ -5488,7 +5214,6 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
             ],
             onChanged: (value) {
               if (value == null) return;
-
               setState(() {
                 type = value;
               });
@@ -5503,19 +5228,18 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
             ),
           ),
           const SizedBox(height: 12),
-          for (final item in [
-            option1,
-            option2,
-            option3,
-            option4,
-          ])
+          for (int i = 0; i < 4; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: TextField(
-                controller: item,
+                controller: [
+                  option1,
+                  option2,
+                  option3,
+                  option4,
+                ][i],
                 decoration: InputDecoration(
-                  labelText:
-                      'الخيار ${[option1, option2, option3, option4].indexOf(item) + 1}',
+                  labelText: 'الخيار ${i + 1}',
                 ),
               ),
             ),
@@ -5590,8 +5314,7 @@ class ManageCharactersPage extends StatefulWidget {
       _ManageCharactersPageState();
 }
 
-class _ManageCharactersPageState
-    extends State<ManageCharactersPage> {
+class _ManageCharactersPageState extends State<ManageCharactersPage> {
   Future<void> edit([Map<String, dynamic>? item]) async {
     final name = TextEditingController(text: clean(item?['name']));
     final description =
@@ -5605,9 +5328,7 @@ class _ManageCharactersPageState
       builder: (_) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: Text(
-              item == null ? 'إضافة شخصية' : 'تعديل شخصية',
-            ),
+            title: Text(item == null ? 'إضافة شخصية' : 'تعديل شخصية'),
             content: SingleChildScrollView(
               child: Column(
                 children: [
@@ -5633,7 +5354,6 @@ class _ManageCharactersPageState
                   OutlinedButton.icon(
                     onPressed: () async {
                       final picker = ImagePicker();
-
                       final picked = await picker.pickImage(
                         source: ImageSource.gallery,
                       );
@@ -5726,7 +5446,6 @@ class _ManageCharactersPageState
                     onPressed: () async {
                       await widget.data
                           .deleteCharacter(item['id']);
-
                       if (!mounted) return;
                       setState(() {});
                     },
@@ -5755,8 +5474,7 @@ class ManageAnimePage extends StatefulWidget {
   });
 
   @override
-  State<ManageAnimePage> createState() =>
-      _ManageAnimePageState();
+  State<ManageAnimePage> createState() => _ManageAnimePageState();
 }
 
 class _ManageAnimePageState extends State<ManageAnimePage> {
@@ -5773,9 +5491,7 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
       builder: (_) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            title: Text(
-              item == null ? 'إضافة أنمي' : 'تعديل أنمي',
-            ),
+            title: Text(item == null ? 'إضافة أنمي' : 'تعديل أنمي'),
             content: SingleChildScrollView(
               child: Column(
                 children: [
@@ -5801,7 +5517,6 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
                   OutlinedButton.icon(
                     onPressed: () async {
                       final picker = ImagePicker();
-
                       final picked = await picker.pickImage(
                         source: ImageSource.gallery,
                       );
@@ -5893,7 +5608,6 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
                   IconButton(
                     onPressed: () async {
                       await widget.data.deleteAnime(item['id']);
-
                       if (!mounted) return;
                       setState(() {});
                     },
@@ -5922,8 +5636,7 @@ class ManageNewsPage extends StatefulWidget {
   });
 
   @override
-  State<ManageNewsPage> createState() =>
-      _ManageNewsPageState();
+  State<ManageNewsPage> createState() => _ManageNewsPageState();
 }
 
 class _ManageNewsPageState extends State<ManageNewsPage> {
@@ -5972,7 +5685,6 @@ class _ManageNewsPageState extends State<ManageNewsPage> {
                   OutlinedButton.icon(
                     onPressed: () async {
                       final picker = ImagePicker();
-
                       final picked = await picker.pickImage(
                         source: ImageSource.gallery,
                       );
@@ -6046,7 +5758,6 @@ class _ManageNewsPageState extends State<ManageNewsPage> {
               trailing: IconButton(
                 onPressed: () async {
                   await widget.data.deleteNews(item['id']);
-
                   if (!mounted) return;
                   setState(() {});
                 },
@@ -6160,8 +5871,7 @@ class ManagePollPage extends StatefulWidget {
   });
 
   @override
-  State<ManagePollPage> createState() =>
-      _ManagePollPageState();
+  State<ManagePollPage> createState() => _ManagePollPageState();
 }
 
 class _ManagePollPageState extends State<ManagePollPage> {
@@ -6187,10 +5897,7 @@ class _ManagePollPageState extends State<ManagePollPage> {
         .toList();
 
     if (question.text.trim().isEmpty || values.length < 2) {
-      showSnack(
-        context,
-        'أدخل السؤال وخيارين على الأقل.',
-      );
+      showSnack(context, 'أدخل السؤال وخيارين على الأقل.');
       return;
     }
 
@@ -6208,11 +5915,9 @@ class _ManagePollPageState extends State<ManagePollPage> {
 
     if (ok) {
       question.clear();
-
       for (final item in options) {
         item.clear();
       }
-
       setState(() {});
     }
   }
@@ -6274,8 +5979,7 @@ class ManagePointsPage extends StatefulWidget {
   });
 
   @override
-  State<ManagePointsPage> createState() =>
-      _ManagePointsPageState();
+  State<ManagePointsPage> createState() => _ManagePointsPageState();
 }
 
 class _ManagePointsPageState extends State<ManagePointsPage> {
@@ -6291,9 +5995,7 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-          player == null ? 'إضافة حساب' : 'تعديل الحساب',
-        ),
+        title: Text(player == null ? 'إضافة حساب' : 'تعديل الحساب'),
         content: SingleChildScrollView(
           child: Column(
             children: [
@@ -6398,9 +6100,7 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
 
           return Card(
             child: ListTile(
-              leading: CircleAvatar(
-                child: Text('${index + 1}'),
-              ),
+              leading: CircleAvatar(child: Text('${index + 1}')),
               title: Text(clean(player['name'])),
               subtitle: Text(
                 'ID: ${player['account_id'] ?? 'غير مرتبط'}\nالمستوى: ${getUserLevel(toInt(player['points']))}',
@@ -6416,7 +6116,6 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
                   IconButton(
                     onPressed: () async {
                       await widget.data.deletePlayer(player['id']);
-
                       if (!mounted) return;
                       setState(() {});
                     },
@@ -6445,8 +6144,7 @@ class ManageLatestPage extends StatefulWidget {
   });
 
   @override
-  State<ManageLatestPage> createState() =>
-      _ManageLatestPageState();
+  State<ManageLatestPage> createState() => _ManageLatestPageState();
 }
 
 class _ManageLatestPageState extends State<ManageLatestPage> {
@@ -6468,10 +6166,7 @@ class _ManageLatestPageState extends State<ManageLatestPage> {
 
     if (!mounted) return;
 
-    showSnack(
-      context,
-      ok ? 'تمت الإضافة.' : 'تعذر الإضافة.',
-    );
+    showSnack(context, ok ? 'تمت الإضافة.' : 'تعذر الإضافة.');
 
     if (ok) {
       title.clear();
@@ -6515,7 +6210,6 @@ class _ManageLatestPageState extends State<ManageLatestPage> {
                 trailing: IconButton(
                   onPressed: () async {
                     await widget.data.deleteLatest(item['id']);
-
                     if (!mounted) return;
                     setState(() {});
                   },
@@ -6547,8 +6241,7 @@ class ManageMessagesPage extends StatefulWidget {
       _ManageMessagesPageState();
 }
 
-class _ManageMessagesPageState
-    extends State<ManageMessagesPage> {
+class _ManageMessagesPageState extends State<ManageMessagesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -6566,7 +6259,6 @@ class _ManageMessagesPageState
               trailing: IconButton(
                 onPressed: () async {
                   await widget.data.deleteMessage(item['id']);
-
                   if (!mounted) return;
                   setState(() {});
                 },
@@ -6601,7 +6293,6 @@ class _ManagePurchaseRequestsPageState
     extends State<ManagePurchaseRequestsPage> {
   Future<void> refresh() async {
     await widget.data.loadData();
-
     if (mounted) setState(() {});
   }
 
@@ -6625,7 +6316,6 @@ class _ManagePurchaseRequestsPageState
               itemBuilder: (_, index) {
                 final item =
                     widget.data.purchaseRequests[index];
-
                 final status = clean(item['status']);
 
                 return Card(
