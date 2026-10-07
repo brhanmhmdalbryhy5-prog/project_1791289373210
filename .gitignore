@@ -1,4 +1,3 @@
-# ملفات Flutter و Dart
 *.iml
 .dart_tool/
 .idea/
@@ -8,22 +7,3 @@ build/
 *.swp
 .flutter-plugins
 .flutter-plugins-dependencies
-
-# ملفات Android الحرجة
-android/local.properties
-android/.gradle/
-local.properties
-.gradle/
-android/app/debug/
-android/app/profile/
-android/app/release/
-android/key.properties
-*.jks
-*.keystore
-
-# الصورة — نتجاوزها لأن KlenCod يفشل في رفعها
-android/app/src/main/res/drawable/ic_launcher.png
-
-# نظام التشغيل
-.DS_Store
-Thumbs.db
