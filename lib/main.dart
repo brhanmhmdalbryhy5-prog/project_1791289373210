@@ -5977,10 +5977,6 @@ class JumpPainter extends CustomPainter {
         oldDelegate.rockX != rockX;
   }
 }
-@override
-bool shouldRepaint(
-  covariant JumpPainter oldDelegate,
-) {
   return oldDelegate.playerY != playerY ||
       oldDelegate.rockX != rockX;
 }
