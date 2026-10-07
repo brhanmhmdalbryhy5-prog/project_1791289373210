@@ -18,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Remove local.properties if exists
+      - name: Delete local.properties if exists
         run: rm -f android/local.properties
 
       - name: Setup Java JDK
