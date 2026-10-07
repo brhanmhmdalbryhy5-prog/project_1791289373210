@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,30 +8,68 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+late final SupabaseClient supabase;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
     url: 'https://sekchgllbimoedsjoumi.supabase.co',
     anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNla2NoZ2xsYmltb2Vkc2pvdW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExNzQ3NzcsImV4cCI6MjEwNjc1MDc3N30.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInR5cCI6IkpXVCJ9.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
   );
+
+  supabase = Supabase.instance.client;
 
   runApp(const MrOtakuApp());
 }
 
-final supabase = Supabase.instance.client;
+/// =======================================================
+/// أدوات عامة
+/// =======================================================
 
-/// صوت النقر العام
 Future<void> playClickSound() async {
   try {
     await SystemSound.play(SystemSoundType.click);
   } catch (_) {}
 }
 
-/// ===============================
+int toInt(dynamic value) {
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double toDouble(dynamic value) {
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+String clean(dynamic value) {
+  return value?.toString() ?? '';
+}
+
+String getUserLevel(int points) {
+  if (points >= 100) return 'SS';
+  if (points >= 70) return 'S';
+  if (points >= 40) return 'A';
+  if (points >= 20) return 'B';
+  if (points >= 10) return 'C';
+  if (points >= 5) return 'D';
+  return 'E';
+}
+
+String quizTypeName(String type) {
+  switch (type) {
+    case 'guess_character':
+      return 'احزر الشخصية';
+    case 'image_character':
+      return 'خمن الشخصية من الصورة';
+    default:
+      return 'أسئلة مباشرة';
+  }
+}
+
+/// =======================================================
 /// الشارات
-/// ===============================
+/// =======================================================
 
 class BadgeInfo {
   final int points;
@@ -44,53 +84,15 @@ class BadgeInfo {
 }
 
 const List<BadgeInfo> otakuBadges = [
-  BadgeInfo(
-    points: 30,
-    icon: '🥉',
-    name: 'أوتاكو ممتاز',
-  ),
-  BadgeInfo(
-    points: 60,
-    icon: '⚔️',
-    name: 'محارب الأنمي',
-  ),
-  BadgeInfo(
-    points: 100,
-    icon: '🥈',
-    name: 'أوتاكو متقدم',
-  ),
-  BadgeInfo(
-    points: 150,
-    icon: '🔥',
-    name: 'عاشق الأنمي',
-  ),
-  BadgeInfo(
-    points: 250,
-    icon: '💎',
-    name: 'أوتاكو نادر',
-  ),
-  BadgeInfo(
-    points: 400,
-    icon: '👑',
-    name: 'سيد الأوتاكو',
-  ),
-  BadgeInfo(
-    points: 600,
-    icon: '🌟',
-    name: 'أسطورة الأنمي',
-  ),
-  BadgeInfo(
-    points: 1000,
-    icon: '🏆',
-    name: 'إمبراطور الأنمي',
-  ),
+  BadgeInfo(points: 30, icon: '🥉', name: 'أوتاكو ممتاز'),
+  BadgeInfo(points: 60, icon: '⚔️', name: 'محارب الأنمي'),
+  BadgeInfo(points: 100, icon: '🥈', name: 'أوتاكو متقدم'),
+  BadgeInfo(points: 150, icon: '🔥', name: 'عاشق الأنمي'),
+  BadgeInfo(points: 250, icon: '💎', name: 'أوتاكو نادر'),
+  BadgeInfo(points: 400, icon: '👑', name: 'سيد الأوتاكو'),
+  BadgeInfo(points: 600, icon: '🌟', name: 'أسطورة الأنمي'),
+  BadgeInfo(points: 1000, icon: '🏆', name: 'إمبراطور الأنمي'),
 ];
-
-List<BadgeInfo> getEarnedBadges(int points) {
-  return otakuBadges.where((badge) {
-    return points >= badge.points;
-  }).toList();
-}
 
 BadgeInfo? getCurrentBadge(int points) {
   BadgeInfo? current;
@@ -104,14 +106,24 @@ BadgeInfo? getCurrentBadge(int points) {
   return current;
 }
 
-/// ===============================
-/// فحص المدير
-/// ===============================
+/// =======================================================
+/// جلسة المدير
+/// =======================================================
 
 Future<bool> checkAdminSession() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  final saved =
+      prefs.getBool('mr_otaku_admin_session') ?? false;
+
+  if (!saved) return false;
+
   final user = supabase.auth.currentUser;
 
-  if (user == null) return false;
+  if (user == null) {
+    await prefs.setBool('mr_otaku_admin_session', false);
+    return false;
+  }
 
   try {
     final admin = await supabase
@@ -120,16 +132,23 @@ Future<bool> checkAdminSession() async {
         .eq('user_id', user.id)
         .maybeSingle();
 
-    return admin != null;
+    final result = admin != null;
+
+    if (!result) {
+      await prefs.setBool('mr_otaku_admin_session', false);
+      await supabase.auth.signOut();
+    }
+
+    return result;
   } catch (e) {
-    debugPrint('Admin session check error: $e');
+    debugPrint('Admin session error: $e');
     return false;
   }
 }
 
-/// ===============================
+/// =======================================================
 /// AppData
-/// ===============================
+/// =======================================================
 
 class AppData extends ChangeNotifier {
   List<Map<String, dynamic>> news = [];
@@ -137,142 +156,296 @@ class AppData extends ChangeNotifier {
   List<Map<String, dynamic>> latest = [];
   List<Map<String, dynamic>> messages = [];
   List<Map<String, dynamic>> purchaseRequests = [];
-
   List<Map<String, dynamic>> notifications = [];
+  List<Map<String, dynamic>> quizQuestions = [];
 
-  Map<dynamic, int> likeCounts = {};
-  Set<String> likedNews = {};
+  List<Map<String, dynamic>> ratingCharacters = [];
+  List<Map<String, dynamic>> ratingAnime = [];
+  List<Map<String, dynamic>> publicChat = [];
 
-  Map<dynamic, int> commentCounts = {};
+  final Map<dynamic, int> likeCounts = {};
+  final Set<String> likedNews = {};
+  final Map<dynamic, int> commentCounts = {};
 
   Map<String, dynamic>? activePoll;
   List<Map<String, dynamic>> activePollOptions = [];
-  Map<dynamic, int> pollVoteCounts = {};
+  final Map<dynamic, int> pollVoteCounts = {};
   String? votedPollId;
+
+  final Set<String> _readNotifications = {};
 
   bool loading = true;
   bool _isAdmin = false;
 
+  int? currentAccountId;
+  String currentUserName = '';
+
   bool get isAdmin => _isAdmin;
 
+  bool get hasAccount =>
+      currentAccountId != null &&
+      currentUserName.trim().isNotEmpty;
+
+  bool get hasQuizQuestions =>
+      quizQuestions.isNotEmpty;
+
   int get unreadNotificationCount {
-    return notifications.where((notification) {
-      final id = notification['id'].toString();
-      return !_readNotifications.contains(id);
+    return notifications.where((n) {
+      return !_readNotifications.contains(
+        n['id'].toString(),
+      );
     }).length;
   }
 
-  final Set<String> _readNotifications = {};
+  Map<String, dynamic>? get currentPlayer {
+    if (currentAccountId == null) return null;
 
-  void setAdminSession(bool value) {
-    _isAdmin = value;
+    for (final player in players) {
+      if (toInt(player['account_id']) ==
+          currentAccountId) {
+        return player;
+      }
+    }
+
+    return null;
   }
 
-  /// ===============================
-  /// المتصدر
-  /// ===============================
+  int get currentPoints {
+    return toInt(currentPlayer?['points']);
+  }
+
+  String get currentLevel {
+    return getUserLevel(currentPoints);
+  }
+
+  BadgeInfo? get currentBadge {
+    return getCurrentBadge(currentPoints);
+  }
 
   Map<String, dynamic>? get leader {
     if (players.isEmpty) return null;
 
     final sorted = [...players];
 
-    sorted.sort((a, b) {
-      final aPoints =
-          int.tryParse(a['points'].toString()) ?? 0;
-
-      final bPoints =
-          int.tryParse(b['points'].toString()) ?? 0;
-
-      return bPoints.compareTo(aPoints);
-    });
+    sorted.sort(
+      (a, b) =>
+          toInt(b['points']).compareTo(
+        toInt(a['points']),
+      ),
+    );
 
     return sorted.first;
   }
 
-  /// ===============================
-  /// تحميل كل البيانات
-  /// ===============================
+  Future<void> setAdminSession(bool value) async {
+    _isAdmin = value;
+
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    await prefs.setBool(
+      'mr_otaku_admin_session',
+      value,
+    );
+
+    notifyListeners();
+  }
+
+  /// =====================================================
+  /// الحساب
+  /// =====================================================
+
+  Future<void> loadLocalAccount() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    final id =
+        prefs.getString('mr_otaku_account_id');
+
+    final name =
+        prefs.getString('mr_otaku_user_name');
+
+    currentAccountId =
+        int.tryParse(id ?? '');
+
+    currentUserName =
+        name?.trim() ?? '';
+  }
+
+  Future<bool> loginAccount(
+    String name,
+    int accountId,
+  ) async {
+    if (name.trim().isEmpty ||
+        accountId <= 0) {
+      return false;
+    }
+
+    try {
+      final player = await supabase
+          .from('players')
+          .select()
+          .eq('account_id', accountId)
+          .maybeSingle();
+
+      if (player == null) {
+        return false;
+      }
+
+      final savedName =
+          clean(player['name']).trim();
+
+      if (savedName.toLowerCase() !=
+          name.trim().toLowerCase()) {
+        return false;
+      }
+
+      final prefs =
+          await SharedPreferences.getInstance();
+
+      await prefs.setString(
+        'mr_otaku_account_id',
+        accountId.toString(),
+      );
+
+      await prefs.setString(
+        'mr_otaku_user_name',
+        savedName,
+      );
+
+      currentAccountId = accountId;
+      currentUserName = savedName;
+
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      debugPrint('Account login error: $e');
+      return false;
+    }
+  }
+
+  Future<void> logoutAccount() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    await prefs.remove('mr_otaku_account_id');
+    await prefs.remove('mr_otaku_user_name');
+
+    currentAccountId = null;
+    currentUserName = '';
+
+    notifyListeners();
+  }
+
+  /// =====================================================
+  /// تحميل البيانات
+  /// =====================================================
 
   Future<void> loadData() async {
     loading = true;
     notifyListeners();
 
     try {
-      final newsData = await supabase
-          .from('news')
-          .select()
-          .order('created_at', ascending: false);
+      final results = await Future.wait([
+        supabase
+            .from('news')
+            .select()
+            .order(
+              'created_at',
+              ascending: false,
+            ),
+        supabase
+            .from('players')
+            .select()
+            .order(
+              'points',
+              ascending: false,
+            ),
+        supabase
+            .from('latest')
+            .select()
+            .order(
+              'created_at',
+              ascending: false,
+            ),
+      ]);
 
-      final playersData = await supabase
-          .from('players')
-          .select()
-          .order('points', ascending: false);
+      news =
+          List<Map<String, dynamic>>.from(
+        results[0],
+      );
 
-      final latestData = await supabase
-          .from('latest')
-          .select()
-          .order('created_at', ascending: false);
+      players =
+          List<Map<String, dynamic>>.from(
+        results[1],
+      );
 
-      news = List<Map<String, dynamic>>.from(newsData);
-
-      players = List<Map<String, dynamic>>.from(playersData);
-
-      players.sort((a, b) {
-        final aPoints =
-            int.tryParse(a['points'].toString()) ?? 0;
-
-        final bPoints =
-            int.tryParse(b['points'].toString()) ?? 0;
-
-        return bPoints.compareTo(aPoints);
-      });
-
-      latest = List<Map<String, dynamic>>.from(latestData);
+      latest =
+          List<Map<String, dynamic>>.from(
+        results[2],
+      );
 
       await loadLikes();
       await loadCommentCounts();
       await loadNotifications();
       await loadPoll();
+      await loadQuizQuestions();
+      await loadRatingCharacters();
+      await loadRatingAnime();
+      await loadPublicChat();
 
       if (_isAdmin) {
         final messagesData = await supabase
             .from('messages')
             .select()
-            .order('created_at', ascending: false);
+            .order(
+              'created_at',
+              ascending: false,
+            );
 
         messages =
-            List<Map<String, dynamic>>.from(messagesData);
+            List<Map<String, dynamic>>.from(
+          messagesData,
+        );
 
-        final requestsData = await supabase
-            .from('purchase_requests')
-            .select()
-            .order('created_at', ascending: false);
+        final requestsData =
+            await supabase
+                .from('purchase_requests')
+                .select()
+                .order(
+                  'created_at',
+                  ascending: false,
+                );
 
         purchaseRequests =
-            List<Map<String, dynamic>>.from(requestsData);
+            List<Map<String, dynamic>>.from(
+          requestsData,
+        );
       } else {
         messages = [];
         purchaseRequests = [];
       }
     } catch (e) {
-      debugPrint('Load error: $e');
+      debugPrint('Load data error: $e');
     }
 
     loading = false;
     notifyListeners();
   }
 
-  /// ===============================
+  /// =====================================================
   /// Client ID
-  /// ===============================
+  /// =====================================================
 
   Future<String> getClientId() async {
     final prefs =
         await SharedPreferences.getInstance();
 
     String? id =
-        prefs.getString('mr_otaku_client_id');
+        prefs.getString(
+      'mr_otaku_client_id',
+    );
 
     if (id == null || id.isEmpty) {
       id = DateTime.now()
@@ -288,39 +461,48 @@ class AppData extends ChangeNotifier {
     return id;
   }
 
-  /// ===============================
+  /// =====================================================
   /// الإعجابات
-  /// ===============================
+  /// =====================================================
 
   Future<void> loadLikes() async {
     try {
-      final clientId = await getClientId();
+      final clientId =
+          await getClientId();
 
-      final data = await supabase
+      final result = await supabase
           .from('news_likes')
-          .select('news_id, client_id');
+          .select(
+            'news_id, client_id',
+          );
 
-      likeCounts = {};
-      likedNews = {};
+      likeCounts.clear();
+      likedNews.clear();
 
-      for (final item in data) {
-        final newsId = item['news_id'];
+      for (final item in result) {
+        final id = item['news_id'];
 
-        likeCounts[newsId] =
-            (likeCounts[newsId] ?? 0) + 1;
+        likeCounts[id] =
+            (likeCounts[id] ?? 0) + 1;
 
-        if (item['client_id'].toString() == clientId) {
-          likedNews.add(newsId.toString());
+        if (clean(item['client_id']) ==
+            clientId) {
+          likedNews.add(
+            id.toString(),
+          );
         }
       }
     } catch (e) {
-      debugPrint('Likes load error: $e');
+      debugPrint('Likes error: $e');
     }
   }
 
-  Future<bool> toggleLike(dynamic newsId) async {
+  Future<bool> toggleLike(
+    dynamic newsId,
+  ) async {
     try {
-      final clientId = await getClientId();
+      final clientId =
+          await getClientId();
 
       final key = newsId.toString();
 
@@ -328,17 +510,26 @@ class AppData extends ChangeNotifier {
         await supabase
             .from('news_likes')
             .delete()
-            .eq('news_id', newsId)
-            .eq('client_id', clientId);
+            .eq(
+              'news_id',
+              newsId,
+            )
+            .eq(
+              'client_id',
+              clientId,
+            );
 
         likedNews.remove(key);
 
         likeCounts[newsId] =
-            ((likeCounts[newsId] ?? 1) - 1)
-                .clamp(0, 999999)
-                .toInt();
+            max(
+              0,
+              (likeCounts[newsId] ?? 1) - 1,
+            );
       } else {
-        await supabase.from('news_likes').insert({
+        await supabase
+            .from('news_likes')
+            .insert({
           'news_id': newsId,
           'client_id': clientId,
         });
@@ -352,28 +543,28 @@ class AppData extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      debugPrint('Like error: $e');
+      debugPrint('Toggle like error: $e');
       return false;
     }
   }
 
-  /// ===============================
+  /// =====================================================
   /// التعليقات
-  /// ===============================
+  /// =====================================================
 
   Future<void> loadCommentCounts() async {
     try {
-      final data = await supabase
+      final result = await supabase
           .from('news_comments')
           .select('news_id');
 
-      commentCounts = {};
+      commentCounts.clear();
 
-      for (final item in data) {
-        final newsId = item['news_id'];
+      for (final item in result) {
+        final id = item['news_id'];
 
-        commentCounts[newsId] =
-            (commentCounts[newsId] ?? 0) + 1;
+        commentCounts[id] =
+            (commentCounts[id] ?? 0) + 1;
       }
     } catch (e) {
       debugPrint('Comment count error: $e');
@@ -384,15 +575,22 @@ class AppData extends ChangeNotifier {
     dynamic newsId,
   ) async {
     try {
-      final data = await supabase
+      final result = await supabase
           .from('news_comments')
           .select()
-          .eq('news_id', newsId)
-          .order('created_at', ascending: false);
+          .eq(
+            'news_id',
+            newsId,
+          )
+          .order(
+            'created_at',
+            ascending: false,
+          );
 
-      return List<Map<String, dynamic>>.from(data);
+      return List<Map<String, dynamic>>.from(
+        result,
+      );
     } catch (e) {
-      debugPrint('Get comments error: $e');
       return [];
     }
   }
@@ -400,26 +598,34 @@ class AppData extends ChangeNotifier {
   Future<bool> addComment(
     dynamic newsId,
     String userName,
-    String commentText,
+    String text,
   ) async {
-    try {
-      final clientId = await getClientId();
+    if (text.trim().isEmpty) return false;
 
-      await supabase.from('news_comments').insert({
+    try {
+      final clientId =
+          await getClientId();
+
+      final name =
+          currentUserName.trim().isNotEmpty
+              ? currentUserName.trim()
+              : userName.trim().isEmpty
+                  ? 'مستخدم'
+                  : userName.trim();
+
+      await supabase
+          .from('news_comments')
+          .insert({
         'news_id': newsId,
         'client_id': clientId,
-        'user_name':
-            userName.trim().isEmpty
-                ? 'مستخدم'
-                : userName.trim(),
-        'comment_text': commentText.trim(),
+        'user_name': name,
+        'comment_text': text.trim(),
       });
 
       commentCounts[newsId] =
           (commentCounts[newsId] ?? 0) + 1;
 
       notifyListeners();
-
       return true;
     } catch (e) {
       debugPrint('Add comment error: $e');
@@ -427,9 +633,9 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===============================
+  /// =====================================================
   /// الإشعارات
-  /// ===============================
+  /// =====================================================
 
   Future<void> loadNotifications() async {
     try {
@@ -447,26 +653,31 @@ class AppData extends ChangeNotifier {
         _readNotifications.addAll(saved);
       }
 
-      final data = await supabase
+      final result = await supabase
           .from('notifications')
           .select()
-          .order('created_at', ascending: false);
+          .order(
+            'created_at',
+            ascending: false,
+          );
 
       notifications =
-          List<Map<String, dynamic>>.from(data);
+          List<Map<String, dynamic>>.from(
+        result,
+      );
     } catch (e) {
       debugPrint('Notifications error: $e');
     }
   }
 
   Future<void> markNotificationRead(
-    dynamic notificationId,
+    dynamic id,
   ) async {
     final prefs =
         await SharedPreferences.getInstance();
 
     _readNotifications.add(
-      notificationId.toString(),
+      id.toString(),
     );
 
     await prefs.setStringList(
@@ -481,9 +692,9 @@ class AppData extends ChangeNotifier {
     final prefs =
         await SharedPreferences.getInstance();
 
-    for (final notification in notifications) {
+    for (final item in notifications) {
       _readNotifications.add(
-        notification['id'].toString(),
+        item['id'].toString(),
       );
     }
 
@@ -499,10 +710,15 @@ class AppData extends ChangeNotifier {
     String title,
     String body,
   ) async {
-    try {
-      if (!_isAdmin) return false;
+    if (!_isAdmin ||
+        title.trim().isEmpty) {
+      return false;
+    }
 
-      await supabase.from('notifications').insert({
+    try {
+      await supabase
+          .from('notifications')
+          .insert({
         'title': title.trim(),
         'body': body.trim(),
       });
@@ -517,64 +733,87 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===============================
-  /// استطلاعات الرأي
-  /// ===============================
+  /// =====================================================
+  /// الاستطلاع
+  /// =====================================================
 
   Future<void> loadPoll() async {
     try {
-      final pollsData = await supabase
+      final polls = await supabase
           .from('polls')
           .select()
-          .eq('active', true)
-          .order('created_at', ascending: false);
+          .eq(
+            'active',
+            true,
+          )
+          .order(
+            'created_at',
+            ascending: false,
+          );
 
-      if (pollsData.isEmpty) {
+      if (polls.isEmpty) {
         activePoll = null;
         activePollOptions = [];
-        pollVoteCounts = {};
+        pollVoteCounts.clear();
         votedPollId = null;
         return;
       }
 
       activePoll =
           Map<String, dynamic>.from(
-        pollsData.first,
+        polls.first,
       );
 
-      final pollId = activePoll!['id'];
+      final pollId =
+          activePoll!['id'];
 
-      final optionsData = await supabase
-          .from('poll_options')
-          .select()
-          .eq('poll_id', pollId)
-          .order('position', ascending: true);
+      final options =
+          await supabase
+              .from('poll_options')
+              .select()
+              .eq(
+                'poll_id',
+                pollId,
+              )
+              .order(
+                'position',
+                ascending: true,
+              );
 
       activePollOptions =
           List<Map<String, dynamic>>.from(
-        optionsData,
+        options,
       );
 
-      final votesData = await supabase
-          .from('poll_votes')
-          .select('option_id, client_id')
-          .eq('poll_id', pollId);
+      final votes =
+          await supabase
+              .from('poll_votes')
+              .select(
+                'option_id, client_id',
+              )
+              .eq(
+                'poll_id',
+                pollId,
+              );
 
-      pollVoteCounts = {};
+      pollVoteCounts.clear();
 
-      final clientId = await getClientId();
+      final clientId =
+          await getClientId();
 
       votedPollId = null;
 
-      for (final vote in votesData) {
-        final optionId = vote['option_id'];
+      for (final vote in votes) {
+        final optionId =
+            vote['option_id'];
 
         pollVoteCounts[optionId] =
             (pollVoteCounts[optionId] ?? 0) + 1;
 
-        if (vote['client_id'].toString() ==
+        if (clean(vote['client_id']) ==
             clientId) {
-          votedPollId = pollId.toString();
+          votedPollId =
+              pollId.toString();
         }
       }
     } catch (e) {
@@ -586,44 +825,48 @@ class AppData extends ChangeNotifier {
     if (activePoll == null) return false;
 
     return votedPollId ==
-        activePoll!['id'].toString();
+        clean(activePoll!['id']);
   }
 
   int get totalPollVotes {
     return pollVoteCounts.values.fold(
       0,
-      (sum, value) => sum + value,
+      (a, b) => a + b,
     );
   }
 
-  double getPollPercentage(dynamic optionId) {
-    final total = totalPollVotes;
+  double getPollPercentage(
+    dynamic optionId,
+  ) {
+    if (totalPollVotes == 0) return 0;
 
-    if (total == 0) return 0;
-
-    return ((pollVoteCounts[optionId] ?? 0) /
-            total) *
+    return (pollVoteCounts[optionId] ?? 0) /
+        totalPollVotes *
         100;
   }
 
-  Future<bool> votePoll(dynamic optionId) async {
+  Future<bool> votePoll(
+    dynamic optionId,
+  ) async {
+    if (activePoll == null ||
+        hasVotedInActivePoll) {
+      return false;
+    }
+
     try {
-      if (activePoll == null) return false;
+      final clientId =
+          await getClientId();
 
-      if (hasVotedInActivePoll) {
-        return false;
-      }
-
-      final clientId = await getClientId();
-
-      await supabase.from('poll_votes').insert({
+      await supabase
+          .from('poll_votes')
+          .insert({
         'poll_id': activePoll!['id'],
         'option_id': optionId,
         'client_id': clientId,
       });
 
       votedPollId =
-          activePoll!['id'].toString();
+          clean(activePoll!['id']);
 
       pollVoteCounts[optionId] =
           (pollVoteCounts[optionId] ?? 0) + 1;
@@ -641,42 +884,42 @@ class AppData extends ChangeNotifier {
     String question,
     List<String> options,
   ) async {
+    if (!_isAdmin ||
+        question.trim().isEmpty ||
+        options.length < 2) {
+      return false;
+    }
+
     try {
-      if (!_isAdmin) return false;
-
-      if (question.trim().isEmpty ||
-          options.length < 2) {
-        return false;
-      }
-
       await supabase
           .from('polls')
-          .update({'active': false})
-          .eq('active', true);
+          .update({
+        'active': false,
+      })
+          .eq(
+        'active',
+        true,
+      );
 
-      final pollResponse =
+      final poll =
           await supabase
               .from('polls')
               .insert({
-                'question': question.trim(),
-                'active': true,
-              })
+        'question': question.trim(),
+        'active': true,
+      })
               .select()
               .single();
-
-      final pollId = pollResponse['id'];
 
       for (int i = 0;
           i < options.length;
           i++) {
-        if (options[i].trim().isEmpty) {
-          continue;
-        }
+        if (options[i].trim().isEmpty) continue;
 
         await supabase
             .from('poll_options')
             .insert({
-          'poll_id': pollId,
+          'poll_id': poll['id'],
           'option_text':
               options[i].trim(),
           'position': i,
@@ -693,47 +936,196 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===============================
-  /// الرسائل
-  /// ===============================
+  /// =====================================================
+  /// الأسئلة
+  /// =====================================================
 
-  Future<bool> sendMessage(
-    String name,
-    String message,
-  ) async {
+  Future<void> loadQuizQuestions() async {
     try {
-      await supabase.from('messages').insert({
-        'name': name,
-        'message': message,
+      final result =
+          await supabase
+              .from('quiz_questions')
+              .select()
+              .order(
+                'created_at',
+                ascending: true,
+              );
+
+      quizQuestions =
+          List<Map<String, dynamic>>.from(
+        result,
+      );
+    } catch (e) {
+      debugPrint('Quiz load error: $e');
+      quizQuestions = [];
+    }
+  }
+
+  Future<bool> addQuizQuestion({
+    required String question,
+    required String option1,
+    required String option2,
+    required String option3,
+    required String option4,
+    required int correctOption,
+    String quizType = 'direct',
+    String? imageUrl,
+  }) async {
+    if (!_isAdmin ||
+        question.trim().isEmpty ||
+        option1.trim().isEmpty ||
+        option2.trim().isEmpty ||
+        option3.trim().isEmpty ||
+        option4.trim().isEmpty ||
+        correctOption < 1 ||
+        correctOption > 4) {
+      return false;
+    }
+
+    try {
+      await supabase
+          .from('quiz_questions')
+          .insert({
+        'question': question.trim(),
+        'option1': option1.trim(),
+        'option2': option2.trim(),
+        'option3': option3.trim(),
+        'option4': option4.trim(),
+        'correct_option': correctOption,
+        'quiz_type': quizType,
+        'image_url': imageUrl,
       });
+
+      await loadQuizQuestions();
+      notifyListeners();
 
       return true;
     } catch (e) {
-      debugPrint('Send message error: $e');
+      debugPrint('Add quiz error: $e');
       return false;
     }
   }
 
-  /// ===============================
+  Future<bool> updateQuizQuestion({
+    required dynamic id,
+    required String question,
+    required String option1,
+    required String option2,
+    required String option3,
+    required String option4,
+    required int correctOption,
+    String quizType = 'direct',
+    String? imageUrl,
+  }) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase
+          .from('quiz_questions')
+          .update({
+        'question': question.trim(),
+        'option1': option1.trim(),
+        'option2': option2.trim(),
+        'option3': option3.trim(),
+        'option4': option4.trim(),
+        'correct_option': correctOption,
+        'quiz_type': quizType,
+        'image_url': imageUrl,
+      })
+          .eq(
+        'id',
+        id,
+      );
+
+      await loadQuizQuestions();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      debugPrint('Update quiz error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteQuizQuestion(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase
+          .from('quiz_questions')
+          .delete()
+          .eq(
+            'id',
+            id,
+          );
+
+      await loadQuizQuestions();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<String?> uploadQuizImage(
+    File file,
+  ) async {
+    if (!_isAdmin) return null;
+
+    try {
+      final extension = file.path
+          .split('.')
+          .last
+          .toLowerCase();
+
+      final path =
+          'quiz/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      await supabase.storage
+          .from('news-images')
+          .upload(
+        path,
+        file,
+        fileOptions:
+            const FileOptions(
+          upsert: false,
+        ),
+      );
+
+      return supabase.storage
+          .from('news-images')
+          .getPublicUrl(path);
+    } catch (e) {
+      debugPrint('Quiz image upload error: $e');
+      return null;
+    }
+  }
+
+  /// =====================================================
   /// الأخبار
-  /// ===============================
+  /// =====================================================
 
   Future<bool> addNews(
     String title,
     String description, {
     File? imageFile,
   }) async {
-    try {
-      if (!_isAdmin) return false;
+    if (!_isAdmin ||
+        title.trim().isEmpty) {
+      return false;
+    }
 
+    try {
       String? imageUrl;
 
       if (imageFile != null) {
-        final extension =
-            imageFile.path
-                .split('.')
-                .last
-                .toLowerCase();
+        final extension = imageFile.path
+            .split('.')
+            .last
+            .toLowerCase();
 
         final path =
             'news_${DateTime.now().millisecondsSinceEpoch}.$extension';
@@ -741,27 +1133,29 @@ class AppData extends ChangeNotifier {
         await supabase.storage
             .from('news-images')
             .upload(
-              path,
-              imageFile,
-              fileOptions:
-                  const FileOptions(
-                upsert: false,
-              ),
-            );
+          path,
+          imageFile,
+          fileOptions:
+              const FileOptions(
+            upsert: false,
+          ),
+        );
 
         imageUrl = supabase.storage
             .from('news-images')
             .getPublicUrl(path);
       }
 
-      await supabase.from('news').insert({
+      await supabase
+          .from('news')
+          .insert({
         'title': title.trim(),
-        'description': description.trim(),
+        'description':
+            description.trim(),
         'image_url': imageUrl,
       });
 
       await loadData();
-
       return true;
     } catch (e) {
       debugPrint('Add news error: $e');
@@ -769,42 +1163,69 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<bool> deleteNews(dynamic id) async {
-    try {
-      if (!_isAdmin) return false;
+  Future<bool> deleteNews(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
 
+    try {
       await supabase
           .from('news')
           .delete()
-          .eq('id', id);
+          .eq(
+            'id',
+            id,
+          );
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Delete news error: $e');
       return false;
     }
   }
 
-  /// ===============================
-  /// اللاعبين
-  /// ===============================
+  /// =====================================================
+  /// اللاعبين والحسابات
+  /// =====================================================
 
   Future<bool> addPlayer(
     String name,
-    int points,
-  ) async {
-    try {
-      if (!_isAdmin) return false;
+    int points, {
+    int? accountId,
+  }) async {
+    if (!_isAdmin ||
+        name.trim().isEmpty) {
+      return false;
+    }
 
-      await supabase.from('players').insert({
-        'name': name,
-        'points': points,
+    try {
+      if (accountId != null) {
+        if (accountId <= 0) return false;
+
+        final exists = await supabase
+            .from('players')
+            .select('id')
+            .eq(
+              'account_id',
+              accountId,
+            )
+            .maybeSingle();
+
+        if (exists != null) {
+          return false;
+        }
+      }
+
+      await supabase
+          .from('players')
+          .insert({
+        'name': name.trim(),
+        'points': max(0, points),
+        if (accountId != null)
+          'account_id': accountId,
       });
 
       await loadData();
-
       return true;
     } catch (e) {
       debugPrint('Add player error: $e');
@@ -815,21 +1236,45 @@ class AppData extends ChangeNotifier {
   Future<bool> updatePlayer(
     dynamic id,
     String name,
-    int points,
-  ) async {
+    int points, {
+    int? accountId,
+  }) async {
+    if (!_isAdmin ||
+        name.trim().isEmpty) {
+      return false;
+    }
+
     try {
-      if (!_isAdmin) return false;
+      if (accountId != null) {
+        final existing = await supabase
+            .from('players')
+            .select('id')
+            .eq(
+              'account_id',
+              accountId,
+            )
+            .maybeSingle();
+
+        if (existing != null &&
+            clean(existing['id']) !=
+                clean(id)) {
+          return false;
+        }
+      }
 
       await supabase
           .from('players')
           .update({
-            'name': name,
-            'points': points,
-          })
-          .eq('id', id);
+        'name': name.trim(),
+        'points': max(0, points),
+        'account_id': accountId,
+      })
+          .eq(
+        'id',
+        id,
+      );
 
       await loadData();
-
       return true;
     } catch (e) {
       debugPrint('Update player error: $e');
@@ -837,92 +1282,130 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<bool> deletePlayer(dynamic id) async {
-    try {
-      if (!_isAdmin) return false;
+  Future<bool> deletePlayer(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
 
+    try {
       await supabase
           .from('players')
           .delete()
-          .eq('id', id);
+          .eq(
+            'id',
+            id,
+          );
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Delete player error: $e');
       return false;
     }
   }
 
-  /// ===============================
+  /// =====================================================
   /// كل جديد
-  /// ===============================
+  /// =====================================================
 
   Future<bool> addLatest(
     String title,
     String description,
   ) async {
-    try {
-      if (!_isAdmin) return false;
+    if (!_isAdmin ||
+        title.trim().isEmpty) {
+      return false;
+    }
 
-      await supabase.from('latest').insert({
+    try {
+      await supabase
+          .from('latest')
+          .insert({
         'title': title.trim(),
-        'description': description.trim(),
+        'description':
+            description.trim(),
       });
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Add latest error: $e');
       return false;
     }
   }
 
-  Future<bool> deleteLatest(dynamic id) async {
-    try {
-      if (!_isAdmin) return false;
+  Future<bool> deleteLatest(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
 
+    try {
       await supabase
           .from('latest')
           .delete()
-          .eq('id', id);
+          .eq(
+            'id',
+            id,
+          );
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Delete latest error: $e');
       return false;
     }
   }
 
-  /// ===============================
-  /// الرسائل
-  /// ===============================
+  /// =====================================================
+  /// الرسائل القديمة
+  /// =====================================================
 
-  Future<bool> deleteMessage(dynamic id) async {
+  Future<bool> sendMessage(
+    String name,
+    String message,
+  ) async {
+    if (message.trim().isEmpty) return false;
+
     try {
-      if (!_isAdmin) return false;
+      await supabase
+          .from('messages')
+          .insert({
+        'name':
+            currentUserName.trim().isNotEmpty
+                ? currentUserName
+                : name.trim().isEmpty
+                    ? 'مستخدم'
+                    : name.trim(),
+        'message': message.trim(),
+      });
 
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteMessage(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
+
+    try {
       await supabase
           .from('messages')
           .delete()
-          .eq('id', id);
+          .eq(
+            'id',
+            id,
+          );
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Delete message error: $e');
       return false;
     }
   }
 
-  /// ===============================
+  /// =====================================================
   /// المشتريات
-  /// ===============================
+  /// =====================================================
 
   Future<bool> createPurchaseRequest(
     dynamic playerId,
@@ -930,7 +1413,9 @@ class AppData extends ChangeNotifier {
     int cost,
   ) async {
     try {
-      await supabase.from('purchase_requests').insert({
+      await supabase
+          .from('purchase_requests')
+          .insert({
         'player_id': playerId,
         'item_type': itemType,
         'cost': cost,
@@ -939,7 +1424,6 @@ class AppData extends ChangeNotifier {
 
       return true;
     } catch (e) {
-      debugPrint('Purchase request error: $e');
       return false;
     }
   }
@@ -947,84 +1431,740 @@ class AppData extends ChangeNotifier {
   Future<bool> approvePurchase(
     Map<String, dynamic> request,
   ) async {
+    if (!_isAdmin ||
+        request['status'] != 'pending') {
+      return false;
+    }
+
     try {
-      if (!_isAdmin) return false;
-
-      if (request['status'] != 'pending') {
-        return false;
-      }
-
       final playerId =
           request['player_id'];
 
       final cost =
-          int.tryParse(
-                request['cost'].toString(),
-              ) ??
-              0;
+          toInt(request['cost']);
 
       final player = await supabase
           .from('players')
           .select()
-          .eq('id', playerId)
+          .eq(
+            'id',
+            playerId,
+          )
           .maybeSingle();
 
       if (player == null) return false;
 
-      final currentPoints =
-          int.tryParse(
-                player['points'].toString(),
-              ) ??
-              0;
+      final points =
+          toInt(player['points']);
 
-      if (currentPoints < cost) {
-        return false;
-      }
+      if (points < cost) return false;
 
       await supabase
           .from('players')
           .update({
-        'points': currentPoints - cost,
-      }).eq('id', playerId);
+        'points': points - cost,
+      })
+          .eq(
+        'id',
+        playerId,
+      );
 
       await supabase
           .from('purchase_requests')
           .update({
         'status': 'approved',
-      }).eq('id', request['id']);
+      })
+          .eq(
+        'id',
+        request['id'],
+      );
 
       await loadData();
-
       return true;
     } catch (e) {
-      debugPrint('Approve purchase error: $e');
       return false;
     }
   }
 
-  Future<bool> rejectPurchase(dynamic id) async {
-    try {
-      if (!_isAdmin) return false;
+  Future<bool> rejectPurchase(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
 
+    try {
       await supabase
           .from('purchase_requests')
           .update({
         'status': 'rejected',
-      }).eq('id', id);
+      })
+          .eq(
+        'id',
+        id,
+      );
 
       await loadData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// =====================================================
+  /// الشخصيات
+  /// =====================================================
+
+  Future<void> loadRatingCharacters() async {
+    try {
+      final result = await supabase
+          .from('rating_characters')
+          .select()
+          .order(
+            'created_at',
+            ascending: false,
+          );
+
+      ratingCharacters =
+          List<Map<String, dynamic>>.from(
+        result,
+      );
+    } catch (e) {
+      ratingCharacters = [];
+    }
+  }
+
+  Future<bool> addCharacter(
+    String name,
+    String description, {
+    File? imageFile,
+  }) async {
+    if (!_isAdmin ||
+        name.trim().isEmpty) {
+      return false;
+    }
+
+    try {
+      String? imageUrl;
+
+      if (imageFile != null) {
+        imageUrl =
+            await uploadGeneralImage(
+          imageFile,
+          'characters',
+        );
+      }
+
+      await supabase
+          .from('rating_characters')
+          .insert({
+        'name': name.trim(),
+        'description':
+            description.trim(),
+        'image_url': imageUrl,
+      });
+
+      await loadRatingCharacters();
+      notifyListeners();
 
       return true;
     } catch (e) {
-      debugPrint('Reject purchase error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateCharacter(
+    dynamic id,
+    String name,
+    String description, {
+    String? imageUrl,
+    File? imageFile,
+  }) async {
+    if (!_isAdmin) return false;
+
+    try {
+      String? finalImage = imageUrl;
+
+      if (imageFile != null) {
+        finalImage =
+            await uploadGeneralImage(
+          imageFile,
+          'characters',
+        );
+      }
+
+      await supabase
+          .from('rating_characters')
+          .update({
+        'name': name.trim(),
+        'description':
+            description.trim(),
+        'image_url': finalImage,
+      })
+          .eq(
+        'id',
+        id,
+      );
+
+      await loadRatingCharacters();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteCharacter(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase
+          .from('rating_characters')
+          .delete()
+          .eq(
+            'id',
+            id,
+          );
+
+      await loadRatingCharacters();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// =====================================================
+  /// الأنميات
+  /// =====================================================
+
+  Future<void> loadRatingAnime() async {
+    try {
+      final result = await supabase
+          .from('rating_anime')
+          .select()
+          .order(
+            'created_at',
+            ascending: false,
+          );
+
+      ratingAnime =
+          List<Map<String, dynamic>>.from(
+        result,
+      );
+    } catch (e) {
+      ratingAnime = [];
+    }
+  }
+
+  Future<bool> addAnime(
+    String title,
+    String description, {
+    File? imageFile,
+  }) async {
+    if (!_isAdmin ||
+        title.trim().isEmpty) {
+      return false;
+    }
+
+    try {
+      String? imageUrl;
+
+      if (imageFile != null) {
+        imageUrl =
+            await uploadGeneralImage(
+          imageFile,
+          'anime',
+        );
+      }
+
+      await supabase
+          .from('rating_anime')
+          .insert({
+        'title': title.trim(),
+        'description':
+            description.trim(),
+        'image_url': imageUrl,
+      });
+
+      await loadRatingAnime();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> updateAnime(
+    dynamic id,
+    String title,
+    String description, {
+    String? imageUrl,
+    File? imageFile,
+  }) async {
+    if (!_isAdmin) return false;
+
+    try {
+      String? finalImage = imageUrl;
+
+      if (imageFile != null) {
+        finalImage =
+            await uploadGeneralImage(
+          imageFile,
+          'anime',
+        );
+      }
+
+      await supabase
+          .from('rating_anime')
+          .update({
+        'title': title.trim(),
+        'description':
+            description.trim(),
+        'image_url': finalImage,
+      })
+          .eq(
+        'id',
+        id,
+      );
+
+      await loadRatingAnime();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> deleteAnime(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase
+          .from('rating_anime')
+          .delete()
+          .eq(
+            'id',
+            id,
+          );
+
+      await loadRatingAnime();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<String?> uploadGeneralImage(
+    File file,
+    String folder,
+  ) async {
+    try {
+      final extension = file.path
+          .split('.')
+          .last
+          .toLowerCase();
+
+      final path =
+          '$folder/${DateTime.now().millisecondsSinceEpoch}.$extension';
+
+      await supabase.storage
+          .from('news-images')
+          .upload(
+        path,
+        file,
+        fileOptions:
+            const FileOptions(
+          upsert: false,
+        ),
+      );
+
+      return supabase.storage
+          .from('news-images')
+          .getPublicUrl(path);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// =====================================================
+  /// التقييمات
+  /// =====================================================
+
+  Future<double> characterAverage(
+    dynamic characterId,
+  ) async {
+    try {
+      final result = await supabase
+          .from('character_ratings')
+          .select('rating')
+          .eq(
+            'character_id',
+            characterId,
+          );
+
+      if (result.isEmpty) return 0;
+
+      double sum = 0;
+
+      for (final row in result) {
+        sum += toDouble(row['rating']);
+      }
+
+      return sum / result.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<double> animeAverage(
+    dynamic animeId,
+  ) async {
+    try {
+      final result = await supabase
+          .from('anime_ratings')
+          .select('rating')
+          .eq(
+            'anime_id',
+            animeId,
+          );
+
+      if (result.isEmpty) return 0;
+
+      double sum = 0;
+
+      for (final row in result) {
+        sum += toDouble(row['rating']);
+      }
+
+      return sum / result.length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<double?> myCharacterRating(
+    dynamic characterId,
+  ) async {
+    if (currentAccountId == null) return null;
+
+    try {
+      final result = await supabase
+          .from('character_ratings')
+          .select('rating')
+          .eq(
+            'character_id',
+            characterId,
+          )
+          .eq(
+            'account_id',
+            currentAccountId!,
+          )
+          .maybeSingle();
+
+      if (result == null) return null;
+
+      return toDouble(result['rating']);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<double?> myAnimeRating(
+    dynamic animeId,
+  ) async {
+    if (currentAccountId == null) return null;
+
+    try {
+      final result = await supabase
+          .from('anime_ratings')
+          .select('rating')
+          .eq(
+            'anime_id',
+            animeId,
+          )
+          .eq(
+            'account_id',
+            currentAccountId!,
+          )
+          .maybeSingle();
+
+      if (result == null) return null;
+
+      return toDouble(result['rating']);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<bool> rateCharacter(
+    dynamic characterId,
+    double rating,
+  ) async {
+    if (currentAccountId == null) {
+      return false;
+    }
+
+    if (rating < 0 ||
+        rating > 10 ||
+        (rating * 2).round() !=
+            rating * 2) {
+      return false;
+    }
+
+    try {
+      await supabase
+          .from('character_ratings')
+          .upsert({
+        'character_id': characterId,
+        'account_id': currentAccountId!,
+        'rating': rating,
+        'updated_at':
+            DateTime.now().toIso8601String(),
+      });
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> rateAnime(
+    dynamic animeId,
+    double rating,
+  ) async {
+    if (currentAccountId == null) {
+      return false;
+    }
+
+    if (rating < 0 ||
+        rating > 10 ||
+        (rating * 2).round() !=
+            rating * 2) {
+      return false;
+    }
+
+    try {
+      await supabase
+          .from('anime_ratings')
+          .upsert({
+        'anime_id': animeId,
+        'account_id': currentAccountId!,
+        'rating': rating,
+        'updated_at':
+            DateTime.now().toIso8601String(),
+      });
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// =====================================================
+  /// المفضلة
+  /// =====================================================
+
+  Future<bool> isFavorite(
+    String type,
+    dynamic id,
+  ) async {
+    if (currentAccountId == null) return false;
+
+    try {
+      final result = await supabase
+          .from('favorites')
+          .select('id')
+          .eq(
+            'account_id',
+            currentAccountId!,
+          )
+          .eq(
+            'item_type',
+            type,
+          )
+          .eq(
+            'item_id',
+            id,
+          )
+          .maybeSingle();
+
+      return result != null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> toggleFavorite(
+    String type,
+    dynamic id,
+  ) async {
+    if (currentAccountId == null) {
+      return false;
+    }
+
+    try {
+      final existing = await supabase
+          .from('favorites')
+          .select('id')
+          .eq(
+            'account_id',
+            currentAccountId!,
+          )
+          .eq(
+            'item_type',
+            type,
+          )
+          .eq(
+            'item_id',
+            id,
+          )
+          .maybeSingle();
+
+      if (existing != null) {
+        await supabase
+            .from('favorites')
+            .delete()
+            .eq(
+              'id',
+              existing['id'],
+            );
+      } else {
+        await supabase
+            .from('favorites')
+            .insert({
+          'account_id':
+              currentAccountId!,
+          'item_type': type,
+          'item_id': id,
+        });
+      }
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>>
+      getFavorites(
+    String type,
+  ) async {
+    if (currentAccountId == null) return [];
+
+    try {
+      final result = await supabase
+          .from('favorites')
+          .select()
+          .eq(
+            'account_id',
+            currentAccountId!,
+          )
+          .eq(
+            'item_type',
+            type,
+          )
+          .order(
+            'created_at',
+            ascending: false,
+          );
+
+      return List<Map<String, dynamic>>.from(
+        result,
+      );
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// =====================================================
+  /// الدردشة العامة
+  /// =====================================================
+
+  Future<void> loadPublicChat() async {
+    try {
+      final result = await supabase
+          .from('public_chat')
+          .select()
+          .order(
+            'created_at',
+            ascending: false,
+          )
+          .limit(100);
+
+      publicChat =
+          List<Map<String, dynamic>>.from(
+        result,
+      );
+    } catch (e) {
+      publicChat = [];
+    }
+  }
+
+  Future<bool> sendPublicChat(
+    String message,
+  ) async {
+    if (message.trim().isEmpty) return false;
+
+    try {
+      await supabase
+          .from('public_chat')
+          .insert({
+        'account_id': currentAccountId,
+        'user_name':
+            currentUserName.trim().isEmpty
+                ? 'مستخدم'
+                : currentUserName.trim(),
+        'message': message.trim(),
+      });
+
+      await loadPublicChat();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> deletePublicChat(
+    dynamic id,
+  ) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase
+          .from('public_chat')
+          .delete()
+          .eq(
+            'id',
+            id,
+          );
+
+      await loadPublicChat();
+      notifyListeners();
+
+      return true;
+    } catch (e) {
       return false;
     }
   }
 }
 
-/// ===============================
+/// =======================================================
 /// التطبيق
-/// ===============================
+/// =======================================================
 
 class MrOtakuApp extends StatefulWidget {
   const MrOtakuApp({super.key});
@@ -1038,136 +2178,338 @@ class _MrOtakuAppState
     extends State<MrOtakuApp> {
   final AppData data = AppData();
 
-  bool checkingSession = true;
-  bool adminSession = false;
+  bool checking = true;
 
   @override
   void initState() {
     super.initState();
-    checkSession();
+    start();
   }
 
-  Future<void> checkSession() async {
-    adminSession =
+  Future<void> start() async {
+    final admin =
         await checkAdminSession();
 
-    data.setAdminSession(
-      adminSession,
-    );
+    await data.setAdminSession(admin);
+
+    if (!admin) {
+      await data.loadLocalAccount();
+    }
 
     await data.loadData();
 
     if (!mounted) return;
 
     setState(() {
-      checkingSession = false;
+      checking = false;
     });
+  }
+
+  ThemeData get theme {
+    return ThemeData(
+      brightness: Brightness.dark,
+      useMaterial3: true,
+      scaffoldBackgroundColor:
+          const Color(0xFF100606),
+      cardColor:
+          const Color(0xFF241010),
+      colorSchemeSeed:
+          Colors.red.shade900,
+      appBarTheme:
+          const AppBarTheme(
+        backgroundColor:
+            Color(0xFF1A0808),
+        foregroundColor:
+            Colors.white,
+        centerTitle: true,
+      ),
+      navigationBarTheme:
+          const NavigationBarThemeData(
+        backgroundColor:
+            Color(0xFF1A0808),
+      ),
+      inputDecorationTheme:
+          InputDecorationTheme(
+        filled: true,
+        fillColor:
+            const Color(0xFF211010),
+        border:
+            OutlineInputBorder(
+          borderRadius:
+              BorderRadius.circular(14),
+        ),
+      ),
+      cardTheme:
+          CardThemeData(
+        color:
+            const Color(0xFF241010),
+        elevation: 2,
+        shape:
+            RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(18),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (checking) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: theme,
+        home: const Scaffold(
+          body: Center(
+            child:
+                CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
     return AnimatedBuilder(
       animation: data,
-      builder: (context, child) {
+      builder: (_, __) {
+        Widget home;
+
+        if (data.isAdmin) {
+          home =
+              AdminPanelPage(data: data);
+        } else if (!data.hasAccount) {
+          home =
+              AccountSetupPage(data: data);
+        } else {
+          home =
+              HomePage(data: data);
+        }
+
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'Mr Otaku',
-          theme: ThemeData(
-            brightness: Brightness.dark,
-            useMaterial3: true,
-            scaffoldBackgroundColor:
-                const Color(0xFF0D0808),
-            colorScheme:
-                ColorScheme.fromSeed(
-              seedColor:
-                  const Color(0xFF9B111E),
-              brightness:
-                  Brightness.dark,
-            ),
-            appBarTheme:
-                const AppBarTheme(
-              backgroundColor:
-                  Color(0xFF160909),
-              foregroundColor:
-                  Colors.white,
-            ),
-            navigationBarTheme:
-                const NavigationBarThemeData(
-              backgroundColor:
-                  Color(0xFF120707),
-              indicatorColor:
-                  Color(0xFF7F101B),
-            ),
-            cardTheme: CardTheme(
-              color:
-                  const Color(0xFF181010),
-              elevation: 2,
-              shape:
-                  RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(16),
-                side:
-                    const BorderSide(
-                  color:
-                      Color(0xFF351414),
-                ),
-              ),
-            ),
-            inputDecorationTheme:
-                InputDecorationTheme(
-              filled: true,
-              fillColor:
-                  const Color(0xFF191010),
-              border:
-                  OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(14),
-                borderSide:
-                    BorderSide.none,
-              ),
-              focusedBorder:
-                  OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(
-                  color:
-                      Color(0xFFB71C2A),
-                ),
-              ),
-            ),
-            filledButtonTheme:
-                FilledButtonThemeData(
-              style:
-                  FilledButton.styleFrom(
-                backgroundColor:
-                    const Color(0xFF8F1521),
-              ),
-            ),
-          ),
-          home: checkingSession
-              ? const Scaffold(
-                  body: Center(
-                    child:
-                        CircularProgressIndicator(),
-                  ),
-                )
-              : adminSession
-                  ? AdminPanelPage(
-                      data: data,
-                    )
-                  : HomePage(
-                      data: data,
-                    ),
+          title: 'مستر أوتاكو',
+          theme: theme,
+          home: home,
         );
       },
     );
   }
 }
 
-/// ===============================
-/// الصفحة الرئيسية
-/// ===============================
+/// =======================================================
+/// تسجيل الدخول بالحساب
+/// =======================================================
+
+class AccountSetupPage extends StatefulWidget {
+  final AppData data;
+
+  const AccountSetupPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<AccountSetupPage> createState() =>
+      _AccountSetupPageState();
+}
+
+class _AccountSetupPageState
+    extends State<AccountSetupPage> {
+  final nameController =
+      TextEditingController();
+
+  final idController =
+      TextEditingController();
+
+  bool loading = false;
+
+  Future<void> login() async {
+    final name =
+        nameController.text.trim();
+
+    final id =
+        int.tryParse(
+      idController.text.trim(),
+    );
+
+    if (name.isEmpty ||
+        id == null ||
+        id <= 0) {
+      showSnack(
+        context,
+        'أدخل اسم المستخدم ومعرف الحساب بشكل صحيح.',
+      );
+      return;
+    }
+
+    setState(() {
+      loading = true;
+    });
+
+    await playClickSound();
+
+    final success =
+        await widget.data.loginAccount(
+      name,
+      id,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      loading = false;
+    });
+
+    if (!success) {
+      showSnack(
+        context,
+        'المعرف غير موجود أو الاسم لا يطابق الحساب.',
+      );
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            HomePage(data: widget.data),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding:
+                const EdgeInsets.all(24),
+            child: Card(
+              child: Padding(
+                padding:
+                    const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      size: 75,
+                    ),
+                    const SizedBox(
+                      height: 15,
+                    ),
+                    const Text(
+                      'مستر أوتاكو',
+                      style: TextStyle(
+                        fontSize: 30,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 8,
+                    ),
+                    const Text(
+                      'تسجيل الدخول إلى حسابك',
+                      style: TextStyle(
+                        fontSize: 17,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 25,
+                    ),
+                    TextField(
+                      controller:
+                          nameController,
+                      decoration:
+                          const InputDecoration(
+                        labelText:
+                            'اسم المستخدم',
+                        prefixIcon:
+                            Icon(
+                          Icons.person,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 14,
+                    ),
+                    TextField(
+                      controller:
+                          idController,
+                      keyboardType:
+                          TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter
+                            .digitsOnly,
+                      ],
+                      decoration:
+                          const InputDecoration(
+                        labelText:
+                            'معرف الحساب',
+                        prefixIcon:
+                            Icon(
+                          Icons.badge,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 20,
+                    ),
+                    SizedBox(
+                      width:
+                          double.infinity,
+                      child:
+                          FilledButton.icon(
+                        onPressed:
+                            loading
+                                ? null
+                                : login,
+                        icon:
+                            loading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child:
+                                        CircularProgressIndicator(
+                                      strokeWidth:
+                                          2,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.login,
+                                  ),
+                        label:
+                            const Text(
+                          'دخول',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 18,
+                    ),
+                    Text(
+                      'إذا لم يكن لديك حساب، اطلب من الإدارة إنشاء حساب لك.',
+                      textAlign:
+                          TextAlign.center,
+                      style: TextStyle(
+                        color: Colors
+                            .grey.shade400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// الرئيسية
+/// =======================================================
 
 class HomePage extends StatefulWidget {
   final AppData data;
@@ -1184,14 +2526,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState
     extends State<HomePage> {
-  int currentIndex = 0;
-
-  final List<String> titles = const [
-    'الرئيسية',
-    'الأخبار',
-    'الخدمات',
-    'الإعدادات',
-  ];
+  int index = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -1203,130 +2538,61 @@ class _HomePageState
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          titles[currentIndex],
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          Stack(
-            children: [
-              IconButton(
-                tooltip: 'الإشعارات',
-                onPressed: () async {
-                  await playClickSound();
-
-                  if (!context.mounted) return;
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          NotificationsPage(
-                        data: widget.data,
-                      ),
-                    ),
-                  );
-                },
-                icon: const Icon(
-                  Icons.notifications_outlined,
-                ),
-              ),
-              if (widget.data
-                      .unreadNotificationCount >
-                  0)
-                Positioned(
-                  right: 7,
-                  top: 7,
-                  child: Container(
-                    constraints:
-                        const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    padding:
-                        const EdgeInsets.symmetric(
-                      horizontal: 4,
-                    ),
-                    decoration:
-                        const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      widget.data
-                                  .unreadNotificationCount >
-                              99
-                          ? '99+'
-                          : widget.data
-                              .unreadNotificationCount
-                              .toString(),
-                      textAlign:
-                          TextAlign.center,
-                      style:
-                          const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
+      body: IndexedStack(
+        index: index,
+        children: pages,
       ),
-      body: pages[currentIndex],
       bottomNavigationBar:
           NavigationBar(
-        selectedIndex: currentIndex,
+        selectedIndex: index,
         onDestinationSelected:
-            (index) async {
+            (value) async {
           await playClickSound();
 
           setState(() {
-            currentIndex = index;
+            index = value;
           });
         },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(
-              Icons.home_outlined,
-            ),
-            selectedIcon: Icon(
-              Icons.home,
-            ),
+        destinations: [
+          const NavigationDestination(
+            icon:
+                Icon(Icons.home_outlined),
+            selectedIcon:
+                Icon(Icons.home),
             label: 'الرئيسية',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(
               Icons.newspaper_outlined,
             ),
-            selectedIcon: Icon(
-              Icons.newspaper,
-            ),
+            selectedIcon:
+                Icon(Icons.newspaper),
             label: 'الأخبار',
           ),
-          NavigationDestination(
-            icon: Icon(
-              Icons.apps_outlined,
-            ),
-            selectedIcon: Icon(
-              Icons.apps,
-            ),
+          const NavigationDestination(
+            icon:
+                Icon(Icons.apps_outlined),
+            selectedIcon:
+                Icon(Icons.apps),
             label: 'الخدمات',
           ),
           NavigationDestination(
-            icon: Icon(
-              Icons.settings_outlined,
+            icon: Badge(
+              isLabelVisible:
+                  widget.data
+                          .unreadNotificationCount >
+                      0,
+              label: Text(
+                widget.data
+                    .unreadNotificationCount
+                    .toString(),
+              ),
+              child: const Icon(
+                Icons.settings_outlined,
+              ),
             ),
-            selectedIcon: Icon(
-              Icons.settings,
-            ),
+            selectedIcon:
+                const Icon(Icons.settings),
             label: 'الإعدادات',
           ),
         ],
@@ -1335,11 +2601,11 @@ class _HomePageState
   }
 }
 
-/// ===============================
-/// Home Tab
-/// ===============================
+/// =======================================================
+/// الصفحة الرئيسية
+/// =======================================================
 
-class HomeTab extends StatelessWidget {
+class HomeTab extends StatefulWidget {
   final AppData data;
 
   const HomeTab({
@@ -1348,249 +2614,576 @@ class HomeTab extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (data.loading) {
-      return const Center(
-        child:
-            CircularProgressIndicator(),
-      );
-    }
+  State<HomeTab> createState() =>
+      _HomeTabState();
+}
 
-    final leader = data.leader;
+class _HomeTabState
+    extends State<HomeTab> {
+  final PageController controller =
+      PageController();
 
-    final leaderPoints = leader == null
-        ? 0
-        : int.tryParse(
-              leader['points'].toString(),
-            ) ??
-            0;
+  Timer? timer;
+  int newsIndex = 0;
 
-    final leaderBadge =
-        getCurrentBadge(
-      leaderPoints,
+  @override
+  void initState() {
+    super.initState();
+
+    timer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) {
+        if (!mounted ||
+            widget.data.news.isEmpty) {
+          return;
+        }
+
+        newsIndex++;
+
+        if (newsIndex >=
+            widget.data.news.length) {
+          newsIndex = 0;
+        }
+
+        controller.animateToPage(
+          newsIndex,
+          duration:
+              const Duration(
+            milliseconds: 650,
+          ),
+          curve: Curves.easeInOut,
+        );
+      },
     );
+  }
 
-    return RefreshIndicator(
-      onRefresh: data.loadData,
-      child: ListView(
-        padding:
-            const EdgeInsets.all(16),
-        children: [
-          /// مستطيل المطور
-          Card(
-            child: Container(
-              width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(
-                vertical: 14,
-                horizontal: 16,
+  @override
+  void dispose() {
+    timer?.cancel();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final leader =
+        widget.data.leader;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'مستر أوتاكو',
+          style: TextStyle(
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () async {
+              await playClickSound();
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      NotificationsPage(
+                    data: widget.data,
+                  ),
+                ),
+              );
+            },
+            icon: Badge(
+              isLabelVisible:
+                  widget.data
+                          .unreadNotificationCount >
+                      0,
+              label: Text(
+                widget.data
+                    .unreadNotificationCount
+                    .toString(),
               ),
+              child:
+                  const Icon(
+                Icons.notifications,
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh:
+            widget.data.loadData,
+        child: ListView(
+          padding:
+              const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding:
+                  const EdgeInsets.all(18),
               decoration:
                   BoxDecoration(
+                color:
+                    const Color(0xFF4A1010),
                 borderRadius:
-                    BorderRadius.circular(16),
-                gradient:
-                    const LinearGradient(
-                  colors: [
-                    Color(0xFF3A090E),
-                    Color(0xFF7F101B),
-                  ],
+                    BorderRadius.circular(
+                  18,
                 ),
               ),
-              child: const Text(
-                'من تطوير برهان البريهي',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight:
-                      FontWeight.bold,
+              child: const Center(
+                child: Text(
+                  'من تطوير برهان البريهي',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 14),
-
-          /// الترحيب
-          Card(
-            child: Padding(
-              padding:
-                  const EdgeInsets.all(22),
-              child: Column(
-                children: const [
-                  Icon(
-                    Icons.auto_awesome,
-                    size: 55,
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    'مرحباً بك في Mr Otaku',
-                    textAlign:
-                        TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'كل ما يخص عالم الأنمي في مكان واحد',
-                    textAlign:
-                        TextAlign.center,
-                    style: TextStyle(
-                      color:
-                          Colors.white70,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(
+              height: 16,
             ),
-          ),
 
-          const SizedBox(height: 16),
+            if (widget.data.news.isNotEmpty)
+              _NewsCarousel(
+                data: widget.data,
+                controller:
+                    controller,
+              ),
 
-          /// المتصدر
-          if (leader != null)
+            const SizedBox(
+              height: 16,
+            ),
+
             Card(
-              elevation: 5,
-              child: Container(
+              child: Padding(
                 padding:
-                    const EdgeInsets.all(18),
-                decoration:
-                    BoxDecoration(
-                  borderRadius:
-                      BorderRadius.circular(16),
-                  gradient:
-                      const LinearGradient(
-                    colors: [
-                      Color(0xFF4D0A10),
-                      Color(0xFF8F1521),
-                    ],
-                  ),
-                ),
+                    const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    const Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '🏆',
-                          style:
-                              TextStyle(
-                            fontSize: 28,
-                          ),
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'متصدر النقاط',
-                          style:
-                              TextStyle(
-                            fontSize: 21,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(
-                      height: 15,
-                    ),
-                    const CircleAvatar(
-                      radius: 32,
-                      backgroundColor:
-                          Colors.white12,
-                      child: Icon(
-                        Icons.person,
-                        size: 34,
-                      ),
+                    const Icon(
+                      Icons.auto_awesome,
+                      size: 60,
                     ),
                     const SizedBox(
                       height: 10,
                     ),
                     Text(
-                      (leader['name'] ?? '')
-                          .toString(),
+                      'مرحباً ${widget.data.currentUserName}',
+                      textAlign:
+                          TextAlign.center,
                       style:
                           const TextStyle(
+                        fontSize: 23,
+                        fontWeight:
+                            FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(
+                      height: 8,
+                    ),
+                    const Text(
+                      'مجتمع ومسابقات وأخبار الأنمي',
+                    ),
+                    const SizedBox(
+                      height: 14,
+                    ),
+                    Row(
+                      mainAxisAlignment:
+                          MainAxisAlignment
+                              .center,
+                      children: [
+                        _MiniStat(
+                          title: 'النقاط',
+                          value: widget.data
+                              .currentPoints
+                              .toString(),
+                        ),
+                        const SizedBox(
+                          width: 25,
+                        ),
+                        _MiniStat(
+                          title: 'المستوى',
+                          value: widget.data
+                              .currentLevel,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(
+              height: 16,
+            ),
+
+            if (leader != null)
+              Card(
+                child: ListTile(
+                  leading:
+                      const CircleAvatar(
+                    child: Icon(
+                      Icons.emoji_events,
+                    ),
+                  ),
+                  title:
+                      const Text(
+                    'متصدر الأوتاكو',
+                    style:
+                        TextStyle(
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  subtitle:
+                      Text(
+                    clean(
+                      leader['name'],
+                    ),
+                  ),
+                  trailing:
+                      Text(
+                    '${toInt(leader['points'])} نقطة',
+                  ),
+                ),
+              ),
+
+            const SizedBox(
+              height: 16,
+            ),
+
+            if (widget.data.activePoll !=
+                null)
+              PollCard(
+                data: widget.data,
+              ),
+
+            const SizedBox(
+              height: 16,
+            ),
+
+            Card(
+              child: Padding(
+                padding:
+                    const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'كل جديد',
+                      style:
+                          TextStyle(
                         fontSize: 21,
                         fontWeight:
                             FontWeight.bold,
                       ),
                     ),
                     const SizedBox(
-                      height: 5,
+                      height: 10,
                     ),
-                    Text(
-                      '⭐ $leaderPoints نقطة',
-                      style:
-                          const TextStyle(
-                        fontSize: 17,
-                        fontWeight:
-                            FontWeight.bold,
+                    if (widget
+                        .data
+                        .latest
+                        .isEmpty)
+                      const Text(
+                        'لا يوجد جديد حالياً.',
+                      )
+                    else
+                      ...widget
+                          .data
+                          .latest
+                          .take(5)
+                          .map(
+                        (item) {
+                          return ListTile(
+                            contentPadding:
+                                EdgeInsets.zero,
+                            leading:
+                                const Icon(
+                              Icons.campaign,
+                            ),
+                            title:
+                                Text(
+                              clean(
+                                item['title'],
+                              ),
+                            ),
+                            subtitle:
+                                Text(
+                              clean(
+                                item[
+                                    'description'],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                    if (leaderBadge !=
-                        null) ...[
-                      const SizedBox(
-                        height: 8,
-                      ),
-                      Text(
-                        '${leaderBadge.icon} ${leaderBadge.name}',
-                        style:
-                            const TextStyle(
-                          fontWeight:
-                              FontWeight.bold,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-          const SizedBox(height: 18),
+class _MiniStat extends StatelessWidget {
+  final String title;
+  final String value;
 
-          /// استطلاع الرأي
-          if (data.activePoll != null)
-            PollCard(data: data),
+  const _MiniStat({
+    required this.title,
+    required this.value,
+  });
 
-          const SizedBox(height: 22),
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+        Text(
+          title,
+          style: TextStyle(
+            color:
+                Colors.grey.shade400,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
-          const Text(
-            'كل جديد',
-            style: TextStyle(
-              fontSize: 21,
+/// =======================================================
+/// شريط الأخبار
+/// =======================================================
+
+class _NewsCarousel
+    extends StatelessWidget {
+  final AppData data;
+  final PageController controller;
+
+  const _NewsCarousel({
+    required this.data,
+    required this.controller,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 190,
+      child: PageView.builder(
+        controller: controller,
+        itemCount: data.news.length,
+        itemBuilder:
+            (context, index) {
+          final item =
+              data.news[index];
+
+          final image =
+              clean(item['image_url']);
+
+          return GestureDetector(
+            onTap: () async {
+              await playClickSound();
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      NewsDetailsPage(
+                    data: data,
+                    news: item,
+                  ),
+                ),
+              );
+            },
+            child: Container(
+              margin:
+                  const EdgeInsets.only(
+                right: 4,
+                left: 4,
+              ),
+              decoration:
+                  BoxDecoration(
+                borderRadius:
+                    BorderRadius.circular(
+                  18,
+                ),
+              ),
+              clipBehavior:
+                  Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (image.isNotEmpty)
+                    Image.network(
+                      image,
+                      fit: BoxFit.cover,
+                      errorBuilder:
+                          (_, __, ___) {
+                        return Container(
+                          color:
+                              const Color(
+                            0xFF351010,
+                          ),
+                          child:
+                              const Icon(
+                            Icons
+                                .newspaper,
+                            size: 50,
+                          ),
+                        );
+                      },
+                    )
+                  else
+                    Container(
+                      color:
+                          const Color(
+                        0xFF351010,
+                      ),
+                      child:
+                          const Icon(
+                        Icons.newspaper,
+                        size: 50,
+                      ),
+                    ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.all(
+                        14,
+                      ),
+                      decoration:
+                          const BoxDecoration(
+                        gradient:
+                            LinearGradient(
+                          begin:
+                              Alignment.topCenter,
+                          end:
+                              Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black87,
+                          ],
+                        ),
+                      ),
+                      child:
+                          Text(
+                        clean(
+                          item['title'],
+                        ),
+                        maxLines: 2,
+                        overflow:
+                            TextOverflow.ellipsis,
+                        style:
+                            const TextStyle(
+                          fontSize: 19,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// تفاصيل الخبر
+/// =======================================================
+
+class NewsDetailsPage
+    extends StatelessWidget {
+  final AppData data;
+  final Map<String, dynamic> news;
+
+  const NewsDetailsPage({
+    super.key,
+    required this.data,
+    required this.news,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image =
+        clean(news['image_url']);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الخبر'),
+      ),
+      body: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          if (image.isNotEmpty)
+            ClipRRect(
+              borderRadius:
+                  BorderRadius.circular(18),
+              child: Image.network(
+                image,
+                height: 230,
+                fit: BoxFit.cover,
+              ),
+            ),
+          const SizedBox(
+            height: 15,
+          ),
+          Text(
+            clean(news['title']),
+            style: const TextStyle(
+              fontSize: 25,
               fontWeight:
                   FontWeight.bold,
             ),
           ),
-
-          const SizedBox(height: 10),
-
-          if (data.latest.isEmpty)
-            const EmptyState(
-              text:
-                  'لا توجد منشورات جديدة حالياً.',
-            )
-          else
-            ...data.latest.take(5).map(
-              (item) =>
-                  LatestCard(item: item),
+          const SizedBox(
+            height: 12,
+          ),
+          Text(
+            clean(
+              news['description'],
             ),
+            style:
+                const TextStyle(
+              fontSize: 17,
+              height: 1.6,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// ===============================
-/// Poll Card
-/// ===============================
+/// =======================================================
+/// استطلاع
+/// =======================================================
 
-class PollCard extends StatefulWidget {
+class PollCard
+    extends StatelessWidget {
   final AppData data;
 
   const PollCard({
@@ -1599,55 +3192,9 @@ class PollCard extends StatefulWidget {
   });
 
   @override
-  State<PollCard> createState() =>
-      _PollCardState();
-}
-
-class _PollCardState
-    extends State<PollCard> {
-  dynamic selectedOption;
-  bool voting = false;
-
-  Future<void> vote() async {
-    if (selectedOption == null) {
-      showSnack(
-        context,
-        'اختر إجابة أولاً.',
-      );
-      return;
-    }
-
-    await playClickSound();
-
-    setState(() {
-      voting = true;
-    });
-
-    final success =
-        await widget.data.votePoll(
-      selectedOption,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      voting = false;
-    });
-
-    if (!success) {
-      showSnack(
-        context,
-        'تعذر التصويت. ربما قمت بالتصويت مسبقاً.',
-      );
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final poll = widget.data.activePoll!;
-
     final voted =
-        widget.data.hasVotedInActivePoll;
+        data.hasVotedInActivePoll;
 
     return Card(
       child: Padding(
@@ -1657,173 +3204,73 @@ class _PollCardState
           crossAxisAlignment:
               CrossAxisAlignment.start,
           children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.poll,
-                  color: Colors.white,
-                ),
-                SizedBox(width: 8),
-                Text(
-                  'استطلاع الرأي',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            Text(
-              (poll['question'] ?? '')
-                  .toString(),
-              style:
-                  const TextStyle(
-                fontSize: 17,
+            const Text(
+              'استطلاع الرأي',
+              style: TextStyle(
+                fontSize: 21,
                 fontWeight:
                     FontWeight.bold,
               ),
             ),
-
-            const SizedBox(height: 12),
-
-            ...widget.data.activePollOptions
-                .map(
+            const SizedBox(
+              height: 10,
+            ),
+            Text(
+              clean(
+                data.activePoll![
+                    'question'],
+              ),
+              style: const TextStyle(
+                fontWeight:
+                    FontWeight.bold,
+                fontSize: 17,
+              ),
+            ),
+            const SizedBox(
+              height: 10,
+            ),
+            ...data.activePollOptions.map(
               (option) {
-                final optionId =
+                final id =
                     option['id'];
 
-                final votes = widget
-                        .data
-                        .pollVoteCounts[
-                            optionId] ??
-                    0;
-
-                final percentage =
-                    widget.data
-                        .getPollPercentage(
-                  optionId,
-                );
-
-                if (voted) {
-                  return Padding(
-                    padding:
-                        const EdgeInsets.only(
-                      bottom: 10,
-                    ),
-                    child: Column(
+                return Padding(
+                  padding:
+                      const EdgeInsets.only(
+                    bottom: 8,
+                  ),
+                  child:
+                      OutlinedButton(
+                    onPressed: voted
+                        ? null
+                        : () async {
+                            await playClickSound();
+                            await data
+                                .votePoll(
+                              id,
+                            );
+                          },
+                    child: Row(
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                (option[
-                                            'option_text'] ??
-                                        '')
-                                    .toString(),
-                              ),
-                            ),
-                            Text(
-                              '$votes صوت',
-                              style:
-                                  const TextStyle(
-                                fontWeight:
-                                    FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(
-                          height: 5,
-                        ),
-                        ClipRRect(
-                          borderRadius:
-                              BorderRadius
-                                  .circular(
-                            20,
-                          ),
+                        Expanded(
                           child:
-                              LinearProgressIndicator(
-                            minHeight: 9,
-                            value:
-                                percentage /
-                                    100,
-                          ),
-                        ),
-                        const SizedBox(
-                          height: 3,
-                        ),
-                        Align(
-                          alignment:
-                              Alignment
-                                  .centerRight,
-                          child: Text(
-                            '${percentage.toStringAsFixed(0)}%',
-                            style:
-                                const TextStyle(
-                              color:
-                                  Colors.white54,
-                              fontSize: 12,
+                              Text(
+                            clean(
+                              option[
+                                  'option_text'],
                             ),
                           ),
                         ),
+                        if (voted)
+                          Text(
+                            '${data.getPollPercentage(id).toStringAsFixed(0)}%',
+                          ),
                       ],
                     ),
-                  );
-                }
-
-                return RadioListTile<
-                    dynamic>(
-                  value: optionId,
-                  groupValue:
-                      selectedOption,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedOption =
-                          value;
-                    });
-                  },
-                  title: Text(
-                    (option['option_text'] ??
-                            '')
-                        .toString(),
                   ),
-                  contentPadding:
-                      EdgeInsets.zero,
                 );
               },
             ),
-
-            if (!voted) ...[
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed:
-                      voting ? null : vote,
-                  icon: const Icon(
-                    Icons.how_to_vote,
-                  ),
-                  label: Text(
-                    voting
-                        ? 'جارٍ التصويت...'
-                        : 'تصويت',
-                  ),
-                ),
-              ),
-            ] else
-              const Text(
-                '✓ تم تسجيل تصويتك',
-                style: TextStyle(
-                  color:
-                      Colors.greenAccent,
-                  fontWeight:
-                      FontWeight.bold,
-                ),
-              ),
           ],
         ),
       ),
@@ -1831,11 +3278,12 @@ class _PollCardState
   }
 }
 
-/// ===============================
+/// =======================================================
 /// الأخبار
-/// ===============================
+/// =======================================================
 
-class NewsPage extends StatefulWidget {
+class NewsPage
+    extends StatelessWidget {
   final AppData data;
 
   const NewsPage({
@@ -1844,115 +3292,68 @@ class NewsPage extends StatefulWidget {
   });
 
   @override
-  State<NewsPage> createState() =>
-      _NewsPageState();
-}
-
-class _NewsPageState
-    extends State<NewsPage> {
-  String search = '';
-
-  @override
   Widget build(BuildContext context) {
-    final filtered =
-        widget.data.news.where((item) {
-      final title =
-          (item['title'] ?? '')
-              .toString()
-              .toLowerCase();
-
-      final description =
-          (item['description'] ?? '')
-              .toString()
-              .toLowerCase();
-
-      return title.contains(
-            search.toLowerCase(),
-          ) ||
-          description.contains(
-            search.toLowerCase(),
-          );
-    }).toList();
-
-    return RefreshIndicator(
-      onRefresh:
-          widget.data.loadData,
-      child: ListView(
-        padding:
-            const EdgeInsets.all(16),
-        children: [
-          TextField(
-            onChanged: (value) {
-              setState(() {
-                search = value;
-              });
-            },
-            decoration:
-                const InputDecoration(
-              hintText:
-                  'ابحث في الأخبار...',
-              prefixIcon:
-                  Icon(Icons.search),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          if (filtered.isEmpty)
-            const EmptyState(
-              text:
-                  'لا توجد أخبار مطابقة.',
-            )
-          else
-            ...filtered.map(
-              (item) => NewsCard(
-                item: item,
-                data: widget.data,
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('الأخبار'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: data.loadData,
+        child: data.news.isEmpty
+            ? ListView(
+                children: const [
+                  SizedBox(height: 200),
+                  Center(
+                    child: Text(
+                      'لا توجد أخبار حالياً.',
+                    ),
+                  ),
+                ],
+              )
+            : ListView.builder(
+                padding:
+                    const EdgeInsets.all(12),
+                itemCount:
+                    data.news.length,
+                itemBuilder:
+                    (_, index) {
+                  return NewsCard(
+                    data: data,
+                    news: data.news[index],
+                  );
+                },
               ),
-            ),
-        ],
       ),
     );
   }
 }
 
-/// ===============================
-/// News Card
-/// ===============================
-
-class NewsCard extends StatelessWidget {
-  final Map<String, dynamic> item;
+class NewsCard
+    extends StatelessWidget {
   final AppData data;
+  final Map<String, dynamic> news;
 
   const NewsCard({
     super.key,
-    required this.item,
     required this.data,
+    required this.news,
   });
 
   @override
   Widget build(BuildContext context) {
-    final id = item['id'];
+    final id = news['id'];
+    final image =
+        clean(news['image_url']);
 
     final liked =
         data.likedNews.contains(
       id.toString(),
     );
 
-    final likes =
-        data.likeCounts[id] ?? 0;
-
-    final comments =
-        data.commentCounts[id] ?? 0;
-
-    final imageUrl =
-        (item['image_url'] ?? '')
-            .toString();
-
     return Card(
       margin:
           const EdgeInsets.only(
-        bottom: 12,
+        bottom: 14,
       ),
       clipBehavior:
           Clip.antiAlias,
@@ -1960,82 +3361,41 @@ class NewsCard extends StatelessWidget {
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
-          if (imageUrl.isNotEmpty)
-            SizedBox(
-              width: double.infinity,
+          if (image.isNotEmpty)
+            Image.network(
+              image,
+              width:
+                  double.infinity,
               height: 210,
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder:
-                    (_, __, ___) {
-                  return Container(
-                    color:
-                        const Color(
-                      0xFF230B0E,
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons
-                            .broken_image,
-                        size: 50,
-                      ),
-                    ),
-                  );
-                },
-                loadingBuilder:
-                    (
-                  context,
-                  child,
-                  progress,
-                ) {
-                  if (progress == null) {
-                    return child;
-                  }
-
-                  return const Center(
-                    child:
-                        CircularProgressIndicator(),
-                  );
-                },
-              ),
+              fit: BoxFit.cover,
             ),
-
           Padding(
             padding:
                 const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
+                  CrossAxisAlignment.start,
               children: [
                 Text(
-                  (item['title'] ?? '')
-                      .toString(),
+                  clean(news['title']),
                   style:
                       const TextStyle(
-                    fontSize: 19,
+                    fontSize: 20,
                     fontWeight:
                         FontWeight.bold,
                   ),
                 ),
-
-                const SizedBox(height: 8),
-
+                const SizedBox(
+                  height: 8,
+                ),
                 Text(
-                  (item['description'] ??
-                          '')
-                      .toString(),
-                  style:
-                      const TextStyle(
-                    color:
-                        Colors.white70,
-                    height: 1.5,
+                  clean(
+                    news['description'],
                   ),
                 ),
-
-                const SizedBox(height: 10),
-
+                const SizedBox(
+                  height: 10,
+                ),
                 Row(
                   children: [
                     IconButton(
@@ -2049,76 +3409,36 @@ class NewsCard extends StatelessWidget {
                             ? Icons.favorite
                             : Icons
                                 .favorite_border,
-                        color: liked
-                            ? Colors.redAccent
-                            : Colors
-                                .white70,
                       ),
                     ),
-
                     Text(
-                      '$likes',
-                      style:
-                          const TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
+                      '${data.likeCounts[id] ?? 0}',
                     ),
-
-                    const SizedBox(width: 6),
-
+                    const SizedBox(
+                      width: 12,
+                    ),
                     IconButton(
-                      tooltip:
-                          'التعليقات',
                       onPressed: () async {
                         await playClickSound();
-
-                        if (!context.mounted) {
-                          return;
-                        }
 
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
-                                NewsCommentsPage(
+                                CommentsPage(
                               data: data,
                               newsId: id,
-                              newsTitle:
-                                  (item['title'] ??
-                                          '')
-                                      .toString(),
                             ),
                           ),
                         );
                       },
                       icon: const Icon(
                         Icons
-                            .chat_bubble_outline,
+                            .comment_outlined,
                       ),
                     ),
-
                     Text(
-                      '$comments',
-                      style:
-                          const TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                    const Spacer(),
-
-                    Text(
-                      formatDate(
-                        item['created_at'],
-                      ),
-                      style:
-                          const TextStyle(
-                        color:
-                            Colors.white38,
-                        fontSize: 12,
-                      ),
+                      '${data.commentCounts[id] ?? 0}',
                     ),
                   ],
                 ),
@@ -2131,112 +3451,81 @@ class NewsCard extends StatelessWidget {
   }
 }
 
-/// ===============================
+/// =======================================================
 /// التعليقات
-/// ===============================
+/// =======================================================
 
-class NewsCommentsPage
+class CommentsPage
     extends StatefulWidget {
   final AppData data;
   final dynamic newsId;
-  final String newsTitle;
 
-  const NewsCommentsPage({
+  const CommentsPage({
     super.key,
     required this.data,
     required this.newsId,
-    required this.newsTitle,
   });
 
   @override
-  State<NewsCommentsPage> createState() =>
-      _NewsCommentsPageState();
+  State<CommentsPage> createState() =>
+      _CommentsPageState();
 }
 
-class _NewsCommentsPageState
-    extends State<NewsCommentsPage> {
-  final nameController =
-      TextEditingController();
-
-  final commentController =
+class _CommentsPageState
+    extends State<CommentsPage> {
+  final controller =
       TextEditingController();
 
   List<Map<String, dynamic>>
       comments = [];
 
   bool loading = true;
-  bool sending = false;
 
   @override
   void initState() {
     super.initState();
-    loadComments();
+    load();
   }
 
-  Future<void> loadComments() async {
-    setState(() {
-      loading = true;
-    });
-
-    final result =
-        await widget.data.getComments(
+  Future<void> load() async {
+    comments =
+        await widget.data
+            .getComments(
       widget.newsId,
     );
 
     if (!mounted) return;
 
     setState(() {
-      comments = result;
       loading = false;
     });
   }
 
-  Future<void> sendComment() async {
-    final comment =
-        commentController.text.trim();
-
-    if (comment.isEmpty) {
-      showSnack(
-        context,
-        'اكتب تعليقاً أولاً.',
-      );
+  Future<void> send() async {
+    if (controller.text
+        .trim()
+        .isEmpty) {
       return;
     }
 
     await playClickSound();
 
-    setState(() {
-      sending = true;
-    });
-
-    final success =
+    final ok =
         await widget.data.addComment(
       widget.newsId,
-      nameController.text.trim(),
-      comment,
+      widget.data.currentUserName,
+      controller.text,
     );
 
     if (!mounted) return;
 
-    setState(() {
-      sending = false;
-    });
-
-    if (success) {
-      commentController.clear();
-
-      await loadComments();
-
-      if (!mounted) return;
-
-      showSnack(
-        context,
-        'تم نشر تعليقك.',
-      );
+    if (ok) {
+      controller.clear();
+      await load();
     } else {
       showSnack(
         context,
-        'فشل نشر التعليق.',
+        'تعذر إرسال التعليق.',
       );
     }
   }
@@ -2258,161 +3547,75 @@ class _NewsCommentsPageState
                         CircularProgressIndicator(),
                   )
                 : comments.isEmpty
-                    ? const EmptyState(
-                        text:
-                            'لا توجد تعليقات بعد.\nكن أول من يعلق!',
+                    ? const Center(
+                        child: Text(
+                          'لا توجد تعليقات بعد.',
+                        ),
                       )
                     : ListView.builder(
                         padding:
                             const EdgeInsets.all(
-                          16,
+                          12,
                         ),
                         itemCount:
                             comments.length,
                         itemBuilder:
-                            (context, index) {
-                          final comment =
+                            (_, index) {
+                          final item =
                               comments[index];
 
                           return Card(
-                            margin:
-                                const EdgeInsets
-                                    .only(
-                              bottom: 10,
-                            ),
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets
-                                      .all(14),
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment
-                                        .start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const CircleAvatar(
-                                        child: Icon(
-                                          Icons.person,
-                                        ),
-                                      ),
-                                      const SizedBox(
-                                        width: 10,
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          (comment[
-                                                      'user_name'] ??
-                                                  'مستخدم')
-                                              .toString(),
-                                          style:
-                                              const TextStyle(
-                                            fontWeight:
-                                                FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        formatDate(
-                                          comment[
-                                              'created_at'],
-                                        ),
-                                        style:
-                                            const TextStyle(
-                                          color:
-                                              Colors.white38,
-                                          fontSize:
-                                              11,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(
-                                    height: 10,
-                                  ),
+                            child: ListTile(
+                              leading:
+                                  const CircleAvatar(
+                                child:
+                                    Icon(
+                                  Icons.person,
+                                ),
+                              ),
+                              title:
                                   Text(
-                                    (comment[
-                                                'comment_text'] ??
-                                            '')
-                                        .toString(),
-                                    style:
-                                        const TextStyle(
-                                      color:
-                                          Colors.white70,
-                                      height:
-                                          1.4,
-                                    ),
-                                  ),
-                                ],
+                                clean(
+                                  item[
+                                      'user_name'],
+                                ),
+                              ),
+                              subtitle:
+                                  Text(
+                                clean(
+                                  item[
+                                      'comment_text'],
+                                ),
                               ),
                             ),
                           );
                         },
                       ),
           ),
-
-          SafeArea(
-            child: Container(
-              padding:
-                  const EdgeInsets.all(10),
-              decoration:
-                  const BoxDecoration(
-                color:
-                    Color(0xFF160909),
-                border:
-                    Border(
-                  top: BorderSide(
-                    color:
-                        Color(0xFF351414),
-                  ),
-                ),
-              ),
-              child: Column(
-                children: [
-                  TextField(
+          Padding(
+            padding:
+                const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
                     controller:
-                        nameController,
+                        controller,
                     decoration:
                         const InputDecoration(
-                      hintText:
-                          'اسمك (اختياري)',
-                      prefixIcon:
-                          Icon(Icons.person),
+                      labelText:
+                          'اكتب تعليقك',
                     ),
                   ),
-                  const SizedBox(
-                    height: 8,
+                ),
+                IconButton(
+                  onPressed: send,
+                  icon:
+                      const Icon(
+                    Icons.send,
                   ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller:
-                              commentController,
-                          maxLines: 2,
-                          decoration:
-                              const InputDecoration(
-                            hintText:
-                                'اكتب تعليقك...',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(
-                        width: 8,
-                      ),
-                      IconButton.filled(
-                        onPressed:
-                            sending
-                                ? null
-                                : sendComment,
-                        icon: const Icon(
-                          Icons.send,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2421,9 +3624,9 @@ class _NewsCommentsPageState
   }
 }
 
-/// ===============================
+/// =======================================================
 /// الإشعارات
-/// ===============================
+/// =======================================================
 
 class NotificationsPage
     extends StatelessWidget {
@@ -2443,197 +3646,93 @@ class NotificationsPage
         actions: [
           if (data.notifications
               .isNotEmpty)
-            TextButton(
+            IconButton(
               onPressed: () async {
                 await playClickSound();
-
                 await data
                     .markAllNotificationsRead();
-
-                if (!context.mounted) return;
-
-                showSnack(
-                  context,
-                  'تم تعليم جميع الإشعارات كمقروءة.',
-                );
               },
-              child:
-                  const Text('قراءة الكل'),
+              icon: const Icon(
+                Icons.done_all,
+              ),
             ),
         ],
       ),
-      body: data.notifications.isEmpty
-          ? const EmptyState(
-              text:
-                  'لا توجد إشعارات حالياً.',
-            )
-          : ListView.builder(
-              padding:
-                  const EdgeInsets.all(16),
-              itemCount:
-                  data.notifications.length,
-              itemBuilder:
-                  (context, index) {
-                final item =
-                    data.notifications[
-                        index];
-
-                final id = item['id']
-                    .toString();
-
-                final read = !data
-                    .unreadNotificationCount
-                    .toString()
-                    .isEmpty &&
-                    false;
-
-                return Card(
-                  margin:
-                      const EdgeInsets.only(
-                    bottom: 10,
+      body:
+          data.notifications.isEmpty
+              ? const Center(
+                  child: Text(
+                    'لا توجد إشعارات.',
                   ),
-                  child: ListTile(
-                    contentPadding:
-                        const EdgeInsets.all(
-                      12,
-                    ),
-                    leading:
-                        const CircleAvatar(
-                      child: Icon(
-                        Icons.notifications,
-                      ),
-                    ),
-                    title: Text(
-                      (item['title'] ?? '')
-                          .toString(),
-                      style:
-                          const TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    subtitle:
-                        Padding(
-                      padding:
-                          const EdgeInsets
-                              .only(
-                        top: 6,
-                      ),
-                      child: Text(
-                        (item['body'] ?? '')
-                            .toString(),
-                      ),
-                    ),
-                    trailing:
-                        const Icon(
-                      Icons
-                          .arrow_forward_ios,
-                      size: 14,
-                    ),
-                    onTap: () async {
-                      await playClickSound();
+                )
+              : ListView.builder(
+                  padding:
+                      const EdgeInsets.all(
+                    12,
+                  ),
+                  itemCount:
+                      data.notifications.length,
+                  itemBuilder:
+                      (_, index) {
+                    final item =
+                        data.notifications[
+                            index];
 
-                      await data
-                          .markNotificationRead(
-                        id,
-                      );
+                    final id =
+                        item['id'];
 
-                      if (!context.mounted) {
-                        return;
-                      }
+                    final read =
+                        data
+                            ._readNotifications
+                            .contains(
+                      id.toString(),
+                    );
 
-                      showDialog(
-                        context: context,
-                        builder: (_) =>
-                            AlertDialog(
-                          title: Text(
-                            (item['title'] ??
-                                    '')
-                                .toString(),
-                          ),
-                          content: Text(
-                            (item['body'] ??
-                                    '')
-                                .toString(),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.pop(
-                                context,
-                              ),
-                              child:
-                                  const Text(
-                                'إغلاق',
-                              ),
-                            ),
-                          ],
+                    return Card(
+                      child:
+                          ListTile(
+                        leading:
+                            Icon(
+                          read
+                              ? Icons
+                                  .notifications_none
+                              : Icons
+                                  .notifications_active,
                         ),
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+                        title:
+                            Text(
+                          clean(
+                            item['title'],
+                          ),
+                          style:
+                              const TextStyle(
+                            fontWeight:
+                                FontWeight.bold,
+                          ),
+                        ),
+                        subtitle:
+                            Text(
+                          clean(
+                            item['body'],
+                          ),
+                        ),
+                        onTap: () async {
+                          await data
+                              .markNotificationRead(
+                            id,
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
 
-/// ===============================
-/// آخر الأخبار
-/// ===============================
-
-class LatestCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-
-  const LatestCard({
-    super.key,
-    required this.item,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin:
-          const EdgeInsets.only(
-        bottom: 12,
-      ),
-      child: ListTile(
-        leading:
-            const CircleAvatar(
-          child: Icon(
-            Icons.campaign,
-          ),
-        ),
-        title: Text(
-          (item['title'] ?? '')
-              .toString(),
-          style:
-              const TextStyle(
-            fontWeight:
-                FontWeight.bold,
-          ),
-        ),
-        subtitle:
-            Padding(
-          padding:
-              const EdgeInsets.only(
-            top: 6,
-          ),
-          child: Text(
-            (item['description'] ??
-                    '')
-                .toString(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// ===============================
+/// =======================================================
 /// الخدمات
-/// ===============================
+/// =======================================================
 
 class ServicesPage
     extends StatelessWidget {
@@ -2646,147 +3745,187 @@ class ServicesPage
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding:
-          const EdgeInsets.all(16),
-      children: [
-        ServiceTile(
-          icon:
-              Icons.notifications,
-          title: 'الإشعارات',
-          subtitle:
-              'شاهد آخر إشعارات التطبيق',
-          onTap: () async {
-            await playClickSound();
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('الخدمات'),
+      ),
+      body: ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          ServiceTile(
+            icon: Icons.quiz,
+            title:
+                'لعبة الأسئلة',
+            subtitle:
+                'ثلاثة أنواع من الأسئلة',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    NotificationsPage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      QuestionsHubPage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-        ServiceTile(
-          icon:
-              Icons.shopping_bag,
-          title: 'متجر النقاط',
-          subtitle:
-              'استبدل نقاط المسابقة بالمزايا',
-          onTap: () async {
-            await playClickSound();
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.star_rate,
+            title:
+                'تقييمات الأنمي',
+            subtitle:
+                'قيّم الشخصيات والأنميات',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    PurchaseShopPage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      RatingsPage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-        ServiceTile(
-          icon: Icons.message,
-          title: 'إرسال رسالة',
-          subtitle:
-              'أرسل رسالة مباشرة إلى الإدارة',
-          onTap: () async {
-            await playClickSound();
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.favorite,
+            title:
+                'المفضلة',
+            subtitle:
+                'الشخصيات والأنميات المفضلة',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    SendMessagePage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      FavoritesPage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-        ServiceTile(
-          icon:
-              Icons.emoji_events,
-          title: 'نقاط المسابقة',
-          subtitle:
-              'ابحث عن نقاطك في المسابقة',
-          onTap: () async {
-            await playClickSound();
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.chat,
+            title:
+                'الدردشة العامة',
+            subtitle:
+                'تحدث مع مجتمع مستر أوتاكو',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    PointsPage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      PublicChatPage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-        ServiceTile(
-          icon: Icons.campaign,
-          title: 'كل جديد',
-          subtitle:
-              'آخر المنشورات والأنشطة',
-          onTap: () async {
-            await playClickSound();
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.sports_esports,
+            title:
+                'لعبة القفز',
+            subtitle:
+                'اقفز فوق الصخور وحطم رقمك',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    LatestPage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      JumpGamePage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-        ServiceTile(
-          icon: Icons.newspaper,
-          title: 'الأخبار',
-          subtitle:
-              'آخر أخبار الأنمي',
-          onTap: () async {
-            await playClickSound();
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.leaderboard,
+            title:
+                'المتصدرون',
+            subtitle:
+                'شاهد ترتيب لاعبي الأوتاكو',
+            onTap: () async {
+              await playClickSound();
 
-            if (!context.mounted) return;
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    NewsPage(
-                  data: data,
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      LeaderboardPage(
+                    data: data,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.shopping_bag,
+            title:
+                'متجر النقاط',
+            subtitle:
+                'استخدم نقاطك للحصول على المزايا',
+            onTap: () async {
+              await playClickSound();
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ShopPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          ServiceTile(
+            icon:
+                Icons.message,
+            title:
+                'إرسال رسالة',
+            subtitle:
+                'تواصل مع إدارة مستر أوتاكو',
+            onTap: () async {
+              await playClickSound();
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      SendMessagePage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
-
-/// ===============================
-/// Service Tile
-/// ===============================
 
 class ServiceTile
     extends StatelessWidget {
@@ -2811,16 +3950,14 @@ class ServiceTile
         bottom: 12,
       ),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 8,
-        ),
+        onTap: onTap,
         leading:
             CircleAvatar(
-          child: Icon(icon),
+          child:
+              Icon(icon),
         ),
-        title: Text(
+        title:
+            Text(
           title,
           style:
               const TextStyle(
@@ -2832,170 +3969,115 @@ class ServiceTile
             Text(subtitle),
         trailing:
             const Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
+          Icons.arrow_back_ios,
+          size: 18,
         ),
-        onTap: onTap,
       ),
     );
   }
 }
 
-/// ===============================
-/// متجر النقاط
-/// ===============================
+/// =======================================================
+/// مركز الأسئلة
+/// =======================================================
 
-class PurchaseShopPage
-    extends StatefulWidget {
+class QuestionsHubPage
+    extends StatelessWidget {
   final AppData data;
 
-  const PurchaseShopPage({
+  const QuestionsHubPage({
     super.key,
     required this.data,
   });
 
-  @override
-  State<PurchaseShopPage> createState() =>
-      _PurchaseShopPageState();
-}
-
-class _PurchaseShopPageState
-    extends State<PurchaseShopPage> {
-  String search = '';
-
-  Future<void> requestPurchase(
-    Map<String, dynamic> player,
+  Future<void> open(
+    BuildContext context,
     String type,
-    int cost,
   ) async {
     await playClickSound();
 
-    final points =
-        int.tryParse(
-              player['points'].toString(),
-            ) ??
-            0;
+    await data.loadQuizQuestions();
 
-    if (points < cost) {
-      showSnack(
-        context,
-        'لا تملك نقاطاً كافية.',
-      );
-      return;
-    }
+    if (!context.mounted) return;
 
-    final success =
-        await widget.data
-            .createPurchaseRequest(
-      player['id'],
-      type,
-      cost,
-    );
-
-    if (!mounted) return;
-
-    showSnack(
+    Navigator.push(
       context,
-      success
-          ? 'تم إرسال طلب الشراء وسيتم مراجعته من الإدارة.'
-          : 'فشل إرسال طلب الشراء.',
+      MaterialPageRoute(
+        builder: (_) =>
+            QuizPage(
+          data: data,
+          typeFilter: type,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final results =
-        widget.data.players.where(
-      (player) {
-        final name =
-            (player['name'] ?? '')
-                .toString()
-                .toLowerCase();
-
-        return name.contains(
-          search.toLowerCase(),
-        );
-      },
-    ).toList();
-
     return Scaffold(
       appBar: AppBar(
         title:
-            const Text('متجر النقاط'),
+            const Text('الأسئلة'),
       ),
       body: ListView(
         padding:
             const EdgeInsets.all(16),
         children: [
-          const Text(
-            'اختر اسمك أولاً',
-            style: TextStyle(
-              fontSize: 21,
-              fontWeight:
-                  FontWeight.bold,
+          _QuestionTypeCard(
+            icon: Icons.person_search,
+            title:
+                'احزر الشخصية',
+            description:
+                'سؤال نصي مع أربعة اختيارات.',
+            onTap: () =>
+                open(
+              context,
+              'guess_character',
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            onChanged: (value) {
-              setState(() {
-                search = value;
-              });
-            },
-            decoration:
-                const InputDecoration(
-              hintText:
-                  'ابحث باسمك...',
-              prefixIcon:
-                  Icon(Icons.search),
+          _QuestionTypeCard(
+            icon:
+                Icons.image_search,
+            title:
+                'خمن اسم الشخصية من الصورة',
+            description:
+                'تظهر صورة الشخصية مع أربعة أسماء.',
+            onTap: () =>
+                open(
+              context,
+              'image_character',
             ),
           ),
-          const SizedBox(height: 18),
-          if (results.isEmpty)
-            const EmptyState(
-              text:
-                  'لم يتم العثور على اسم.',
-            )
-          else
-            ...results.map(
-              (player) =>
-                  PlayerShopCard(
-                player: player,
-                onNamePurchase:
-                    () {
-                  requestPurchase(
-                    player,
-                    'group_name',
-                    5,
-                  );
-                },
-                onIconPurchase:
-                    () {
-                  requestPurchase(
-                    player,
-                    'group_icon',
-                    10,
-                  );
-                },
-              ),
+          _QuestionTypeCard(
+            icon: Icons.help_outline,
+            title:
+                'أسئلة مباشرة',
+            description:
+                'أسئلة مباشرة عن الأنمي والشخصيات.',
+            onTap: () =>
+                open(
+              context,
+              'direct',
             ),
+          ),
         ],
       ),
     );
   }
 }
 
-class PlayerShopCard
+class _QuestionTypeCard
     extends StatelessWidget {
-  final Map<String, dynamic> player;
-  final VoidCallback onNamePurchase;
-  final VoidCallback onIconPurchase;
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
 
-  const PlayerShopCard({
-    super.key,
-    required this.player,
-    required this.onNamePurchase,
-    required this.onIconPurchase,
+  const _QuestionTypeCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
   });
 
   @override
@@ -3005,75 +4087,2307 @@ class PlayerShopCard
           const EdgeInsets.only(
         bottom: 14,
       ),
-      child: Padding(
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.all(16),
+        leading:
+            CircleAvatar(
+          radius: 28,
+          child:
+              Icon(icon),
+        ),
+        title:
+            Text(
+          title,
+          style:
+              const TextStyle(
+            fontSize: 18,
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+        subtitle:
+            Text(description),
+        trailing:
+            const Icon(
+          Icons.arrow_back_ios,
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// لعبة الأسئلة
+/// =======================================================
+
+class QuizPage
+    extends StatefulWidget {
+  final AppData data;
+  final String typeFilter;
+
+  const QuizPage({
+    super.key,
+    required this.data,
+    required this.typeFilter,
+  });
+
+  @override
+  State<QuizPage> createState() =>
+      _QuizPageState();
+}
+
+class _QuizPageState
+    extends State<QuizPage> {
+  late List<Map<String, dynamic>>
+      questions;
+
+  int current = 0;
+  int correctAnswers = 0;
+  int? selected;
+  bool answered = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    questions =
+        widget.data.quizQuestions
+            .where(
+      (q) {
+        final type =
+            clean(
+              q['quiz_type'],
+            ).isEmpty
+                ? 'direct'
+                : clean(
+                    q['quiz_type'],
+                  );
+
+        return type ==
+            widget.typeFilter;
+      },
+    ).toList();
+  }
+
+  Map<String, dynamic>? get currentQuestion {
+    if (questions.isEmpty ||
+        current >= questions.length) {
+      return null;
+    }
+
+    return questions[current];
+  }
+
+  String option(int number) {
+    return clean(
+      currentQuestion?[
+          'option$number'],
+    );
+  }
+
+  Future<void> answer(
+    int number,
+  ) async {
+    if (answered ||
+        currentQuestion == null) {
+      return;
+    }
+
+    await playClickSound();
+
+    final correct =
+        toInt(
+      currentQuestion![
+          'correct_option'],
+    );
+
+    setState(() {
+      selected = number;
+      answered = true;
+
+      if (number == correct) {
+        correctAnswers++;
+      }
+    });
+  }
+
+  void next() {
+    if (!answered) return;
+
+    if (current + 1 >=
+        questions.length) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              QuizResultPage(
+            data: widget.data,
+            correct:
+                correctAnswers,
+            total: questions.length,
+            typeFilter:
+                widget.typeFilter,
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      current++;
+      selected = null;
+      answered = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (questions.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title:
+              Text(
+            quizTypeName(
+              widget.typeFilter,
+            ),
+          ),
+        ),
+        body: const Center(
+          child: Padding(
+            padding:
+                EdgeInsets.all(24),
+            child: Text(
+              'لا توجد أسئلة من هذا النوع حالياً.\nيمكن للمدير إضافتها من لوحة الإدارة.',
+              textAlign:
+                  TextAlign.center,
+              style:
+                  TextStyle(
+                fontSize: 18,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final q =
+        currentQuestion!;
+
+    final correct =
+        toInt(
+      q['correct_option'],
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            Text(
+          quizTypeName(
+            widget.typeFilter,
+          ),
+        ),
+      ),
+      body: ListView(
         padding:
             const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  child: Icon(
-                    Icons.person,
+        children: [
+          LinearProgressIndicator(
+            value:
+                (current + 1) /
+                    questions.length,
+          ),
+          const SizedBox(
+            height: 12,
+          ),
+          Text(
+            'السؤال ${current + 1} من ${questions.length}',
+            textAlign:
+                TextAlign.center,
+            style:
+                const TextStyle(
+              fontWeight:
+                  FontWeight.bold,
+            ),
+          ),
+          const SizedBox(
+            height: 16,
+          ),
+
+          if (widget.typeFilter ==
+                  'image_character' &&
+              clean(
+                q['image_url'],
+              ).isNotEmpty)
+            ClipRRect(
+              borderRadius:
+                  BorderRadius.circular(
+                18,
+              ),
+              child:
+                  Image.network(
+                clean(
+                  q['image_url'],
+                ),
+                height: 250,
+                fit: BoxFit.contain,
+                errorBuilder:
+                    (_, __, ___) {
+                  return const SizedBox(
+                    height: 150,
+                    child:
+                        Center(
+                      child: Icon(
+                        Icons
+                            .broken_image,
+                        size: 50,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          const SizedBox(
+            height: 16,
+          ),
+
+          Card(
+            child: Padding(
+              padding:
+                  const EdgeInsets.all(20),
+              child:
+                  Text(
+                clean(
+                  q['question'],
+                ),
+                textAlign:
+                    TextAlign.center,
+                style:
+                    const TextStyle(
+                  fontSize: 21,
+                  fontWeight:
+                      FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(
+            height: 15,
+          ),
+
+          for (int i = 1; i <= 4; i++)
+            Padding(
+              padding:
+                  const EdgeInsets.only(
+                bottom: 10,
+              ),
+              child:
+                  SizedBox(
+                width:
+                    double.infinity,
+                child:
+                    FilledButton(
+                  onPressed:
+                      answered
+                          ? null
+                          : () =>
+                              answer(
+                            i,
+                          ),
+                  style:
+                      FilledButton.styleFrom(
+                    backgroundColor:
+                        answered &&
+                                i ==
+                                    correct
+                            ? Colors.green
+                            : answered &&
+                                    i ==
+                                        selected
+                                ? Colors.red
+                                : null,
                   ),
-                ),
-                const SizedBox(
-                  width: 12,
-                ),
-                Expanded(
-                  child: Text(
-                    (player['name'] ?? '')
-                        .toString(),
-                    style:
-                        const TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
-                      fontSize: 18,
+                  child:
+                      Padding(
+                    padding:
+                        const EdgeInsets.all(
+                      13,
+                    ),
+                    child:
+                        Text(
+                      option(i),
+                      textAlign:
+                          TextAlign.center,
                     ),
                   ),
                 ),
-                Text(
-                  '${player['points'] ?? 0} نقطة',
-                  style:
-                      const TextStyle(
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
+              ),
+            ),
+
+          if (answered)
+            Card(
+              child:
+                  Padding(
+                padding:
+                    const EdgeInsets.all(
+                  15,
                 ),
-              ],
+                child:
+                    Row(
+                  children: [
+                    Icon(
+                      selected ==
+                              correct
+                          ? Icons
+                              .check_circle
+                          : Icons
+                              .cancel,
+                    ),
+                    const SizedBox(
+                      width: 10,
+                    ),
+                    Expanded(
+                      child:
+                          Text(
+                        selected ==
+                                correct
+                            ? 'إجابة صحيحة! 🔥'
+                            : 'إجابة خاطئة. الإجابة الصحيحة هي: ${option(correct)}',
+                        style:
+                            const TextStyle(
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed:
-                  onNamePurchase,
-              icon: const Icon(
-                Icons.text_fields,
-              ),
-              label: const Text(
-                'شراء اسم المجموعة - 5 نقاط',
+
+          const SizedBox(
+            height: 10,
+          ),
+
+          FilledButton.icon(
+            onPressed:
+                answered ? next : null,
+            icon:
+                const Icon(
+              Icons.arrow_back,
+            ),
+            label:
+                Text(
+              current + 1 >=
+                      questions.length
+                  ? 'عرض النتيجة'
+                  : 'السؤال التالي',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// نتيجة الأسئلة
+/// =======================================================
+
+class QuizResultPage
+    extends StatelessWidget {
+  final AppData data;
+  final int correct;
+  final int total;
+  final String typeFilter;
+
+  const QuizResultPage({
+    super.key,
+    required this.data,
+    required this.correct,
+    required this.total,
+    required this.typeFilter,
+  });
+
+  double get percentage {
+    if (total == 0) return 0;
+    return correct / total * 100;
+  }
+
+  String get message {
+    if (percentage >= 90) {
+      return 'أسطوري! معلوماتك رائعة 🏆';
+    }
+
+    if (percentage >= 70) {
+      return 'ممتاز! مستواك قوي جداً 🔥';
+    }
+
+    if (percentage >= 50) {
+      return 'جيد! يمكنك الوصول للأفضل ⚔️';
+    }
+
+    return 'تحتاج إلى المزيد من التدريب 😄';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('النتيجة'),
+      ),
+      body: Center(
+        child: Padding(
+          padding:
+              const EdgeInsets.all(24),
+          child: Card(
+            child: Padding(
+              padding:
+                  const EdgeInsets.all(25),
+              child: Column(
+                mainAxisSize:
+                    MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.emoji_events,
+                    size: 80,
+                  ),
+                  const SizedBox(
+                    height: 15,
+                  ),
+                  const Text(
+                    'نتيجتك',
+                    style:
+                        TextStyle(
+                      fontSize: 28,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 15,
+                  ),
+                  Text(
+                    '${percentage.toStringAsFixed(0)}%',
+                    style:
+                        const TextStyle(
+                      fontSize: 48,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  Text(
+                    '$correct من $total إجابات صحيحة',
+                  ),
+                  const SizedBox(
+                    height: 15,
+                  ),
+                  Text(
+                    message,
+                    textAlign:
+                        TextAlign.center,
+                    style:
+                        const TextStyle(
+                      fontSize: 18,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 25,
+                  ),
+                  SizedBox(
+                    width:
+                        double.infinity,
+                    child:
+                        FilledButton(
+                      onPressed:
+                          () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (_) =>
+                                    QuizPage(
+                              data: data,
+                              typeFilter:
+                                  typeFilter,
+                            ),
+                          ),
+                        );
+                      },
+                      child:
+                          const Text(
+                        'إعادة الاختبار',
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed:
+                        () {
+                      Navigator.pop(
+                        context,
+                      );
+                    },
+                    child:
+                        const Text(
+                      'العودة',
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed:
-                  onIconPurchase,
-              icon: const Icon(
-                Icons.image,
-              ),
-              label: const Text(
-                'شراء أيقونة المجموعة - 10 نقاط',
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// ===============================
-/// إرسال رسالة
-/// ===============================
+/// =======================================================
+/// التقييمات
+/// =======================================================
+
+class RatingsPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const RatingsPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<RatingsPage> createState() =>
+      _RatingsPageState();
+}
+
+class _RatingsPageState
+    extends State<RatingsPage>
+    with SingleTickerProviderStateMixin {
+  late TabController tabs;
+
+  @override
+  void initState() {
+    super.initState();
+
+    tabs = TabController(
+      length: 2,
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    tabs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('التقييمات'),
+        bottom:
+            TabBar(
+          controller: tabs,
+          tabs: const [
+            Tab(
+              text: 'الشخصيات',
+              icon:
+                  Icon(Icons.person),
+            ),
+            Tab(
+              text: 'الأنميات',
+              icon:
+                  Icon(Icons.movie),
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: tabs,
+        children: [
+          CharacterRatingsList(
+            data: widget.data,
+          ),
+          AnimeRatingsList(
+            data: widget.data,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CharacterRatingsList
+    extends StatefulWidget {
+  final AppData data;
+
+  const CharacterRatingsList({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<CharacterRatingsList> createState() =>
+      _CharacterRatingsListState();
+}
+
+class _CharacterRatingsListState
+    extends State<CharacterRatingsList> {
+  Map<dynamic, double> averages = {};
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final map =
+        <dynamic, double>{};
+
+    for (final item
+        in widget.data.ratingCharacters) {
+      map[item['id']] =
+          await widget.data
+              .characterAverage(
+        item['id'],
+      );
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      averages = map;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list =
+        [...widget.data.ratingCharacters];
+
+    list.sort(
+      (a, b) =>
+          (averages[b['id']] ?? 0)
+              .compareTo(
+        averages[a['id']] ?? 0,
+      ),
+    );
+
+    return RefreshIndicator(
+      onRefresh: load,
+      child: list.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 200),
+                Center(
+                  child: Text(
+                    'لا توجد شخصيات للتقييم حالياً.',
+                  ),
+                ),
+              ],
+            )
+          : ListView.builder(
+              padding:
+                  const EdgeInsets.all(12),
+              itemCount: list.length,
+              itemBuilder:
+                  (_, index) {
+                final item =
+                    list[index];
+
+                return RatingItemCard(
+                  title:
+                      clean(
+                    item['name'],
+                  ),
+                  description:
+                      clean(
+                    item['description'],
+                  ),
+                  imageUrl:
+                      clean(
+                    item['image_url'],
+                  ),
+                  average:
+                      averages[
+                              item['id']] ??
+                          0,
+                  onRate:
+                      () =>
+                          showRatingDialog(
+                    context,
+                    'character',
+                    item['id'],
+                    widget.data,
+                  ),
+                  onFavorite:
+                      () async {
+                    await widget.data
+                        .toggleFavorite(
+                      'character',
+                      item['id'],
+                    );
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  },
+                );
+              },
+            ),
+    );
+  }
+}
+
+class AnimeRatingsList
+    extends StatefulWidget {
+  final AppData data;
+
+  const AnimeRatingsList({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<AnimeRatingsList> createState() =>
+      _AnimeRatingsListState();
+}
+
+class _AnimeRatingsListState
+    extends State<AnimeRatingsList> {
+  Map<dynamic, double> averages = {};
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final map =
+        <dynamic, double>{};
+
+    for (final item
+        in widget.data.ratingAnime) {
+      map[item['id']] =
+          await widget.data
+              .animeAverage(
+        item['id'],
+      );
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      averages = map;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list =
+        [...widget.data.ratingAnime];
+
+    list.sort(
+      (a, b) =>
+          (averages[b['id']] ?? 0)
+              .compareTo(
+        averages[a['id']] ?? 0,
+      ),
+    );
+
+    return RefreshIndicator(
+      onRefresh: load,
+      child: list.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 200),
+                Center(
+                  child: Text(
+                    'لا توجد أنميات للتقييم حالياً.',
+                  ),
+                ),
+              ],
+            )
+          : ListView.builder(
+              padding:
+                  const EdgeInsets.all(12),
+              itemCount: list.length,
+              itemBuilder:
+                  (_, index) {
+                final item =
+                    list[index];
+
+                return RatingItemCard(
+                  title:
+                      clean(
+                    item['title'],
+                  ),
+                  description:
+                      clean(
+                    item['description'],
+                  ),
+                  imageUrl:
+                      clean(
+                    item['image_url'],
+                  ),
+                  average:
+                      averages[
+                              item['id']] ??
+                          0,
+                  onRate:
+                      () =>
+                          showRatingDialog(
+                    context,
+                    'anime',
+                    item['id'],
+                    widget.data,
+                  ),
+                  onFavorite:
+                      () async {
+                    await widget.data
+                        .toggleFavorite(
+                      'anime',
+                      item['id'],
+                    );
+                    if (mounted) {
+                      setState(() {});
+                    }
+                  },
+                );
+              },
+            ),
+    );
+  }
+}
+
+class RatingItemCard
+    extends StatelessWidget {
+  final String title;
+  final String description;
+  final String imageUrl;
+  final double average;
+  final VoidCallback onRate;
+  final VoidCallback onFavorite;
+
+  const RatingItemCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.imageUrl,
+    required this.average,
+    required this.onRate,
+    required this.onFavorite,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin:
+          const EdgeInsets.only(
+        bottom: 12,
+      ),
+      clipBehavior:
+          Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          if (imageUrl.isNotEmpty)
+            Image.network(
+              imageUrl,
+              width:
+                  double.infinity,
+              height: 180,
+              fit: BoxFit.cover,
+            ),
+          Padding(
+            padding:
+                const EdgeInsets.all(15),
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style:
+                      const TextStyle(
+                    fontSize: 20,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+                if (description
+                    .trim()
+                    .isNotEmpty) ...[
+                  const SizedBox(
+                    height: 6,
+                  ),
+                  Text(
+                    description,
+                  ),
+                ],
+                const SizedBox(
+                  height: 10,
+                ),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.star,
+                    ),
+                    const SizedBox(
+                      width: 5,
+                    ),
+                    Text(
+                      average
+                          .toStringAsFixed(1),
+                      style:
+                          const TextStyle(
+                        fontWeight:
+                            FontWeight.bold,
+                        fontSize: 17,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed:
+                          onFavorite,
+                      icon:
+                          const Icon(
+                        Icons
+                            .favorite_border,
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed:
+                          onRate,
+                      child:
+                          const Text(
+                        'قيّم',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> showRatingDialog(
+  BuildContext context,
+  String type,
+  dynamic id,
+  AppData data,
+) async {
+  double value = 5;
+
+  await showDialog(
+    context: context,
+    builder: (_) {
+      return StatefulBuilder(
+        builder:
+            (context, setState) {
+          return AlertDialog(
+            title:
+                const Text(
+              'اختر تقييمك',
+            ),
+            content:
+                Column(
+              mainAxisSize:
+                  MainAxisSize.min,
+              children: [
+                Text(
+                  value
+                      .toStringAsFixed(
+                    1,
+                  ),
+                  style:
+                      const TextStyle(
+                    fontSize: 35,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+                Slider(
+                  value: value,
+                  min: 0,
+                  max: 10,
+                  divisions: 20,
+                  label:
+                      value
+                          .toStringAsFixed(
+                    1,
+                  ),
+                  onChanged:
+                      (v) {
+                    setState(() {
+                      value = v;
+                    });
+                  },
+                ),
+                const Text(
+                  'التقييم من 0 إلى 10 بنصف نقطة',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    () =>
+                        Navigator.pop(
+                  context,
+                ),
+                child:
+                    const Text(
+                  'إلغاء',
+                ),
+              ),
+              FilledButton(
+                onPressed:
+                    () async {
+                  final ok =
+                      type ==
+                              'character'
+                          ? await data
+                              .rateCharacter(
+                              id,
+                              value,
+                            )
+                          : await data
+                              .rateAnime(
+                              id,
+                              value,
+                            );
+
+                  if (context.mounted) {
+                    Navigator.pop(
+                      context,
+                    );
+
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تم حفظ تقييمك.'
+                          : 'تعذر حفظ التقييم.',
+                    );
+                  }
+                },
+                child:
+                    const Text(
+                  'حفظ',
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+/// =======================================================
+/// المفضلة
+/// =======================================================
+
+class FavoritesPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const FavoritesPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<FavoritesPage> createState() =>
+      _FavoritesPageState();
+}
+
+class _FavoritesPageState
+    extends State<FavoritesPage>
+    with SingleTickerProviderStateMixin {
+  late TabController tabs;
+
+  List<Map<String, dynamic>>
+      characterFavorites = [];
+
+  List<Map<String, dynamic>>
+      animeFavorites = [];
+
+  @override
+  void initState() {
+    super.initState();
+
+    tabs = TabController(
+      length: 2,
+      vsync: this,
+    );
+
+    load();
+  }
+
+  @override
+  void dispose() {
+    tabs.dispose();
+    super.dispose();
+  }
+
+  Future<void> load() async {
+    characterFavorites =
+        await widget.data
+            .getFavorites(
+      'character',
+    );
+
+    animeFavorites =
+        await widget.data
+            .getFavorites(
+      'anime',
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text('المفضلة'),
+        bottom:
+            TabBar(
+          controller: tabs,
+          tabs: const [
+            Tab(
+              text: 'الشخصيات',
+            ),
+            Tab(
+              text: 'الأنميات',
+            ),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: tabs,
+        children: [
+          FavoritesList(
+            favorites:
+                characterFavorites,
+            source:
+                widget.data
+                    .ratingCharacters,
+            titleKey: 'name',
+            type: 'character',
+            data: widget.data,
+            onRefresh: load,
+          ),
+          FavoritesList(
+            favorites:
+                animeFavorites,
+            source:
+                widget.data.ratingAnime,
+            titleKey: 'title',
+            type: 'anime',
+            data: widget.data,
+            onRefresh: load,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class FavoritesList
+    extends StatelessWidget {
+  final List<Map<String, dynamic>>
+      favorites;
+  final List<Map<String, dynamic>>
+      source;
+  final String titleKey;
+  final String type;
+  final AppData data;
+  final Future<void> Function()
+      onRefresh;
+
+  const FavoritesList({
+    super.key,
+    required this.favorites,
+    required this.source,
+    required this.titleKey,
+    required this.type,
+    required this.data,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <Map<String, dynamic>>[];
+
+    for (final fav in favorites) {
+      for (final item in source) {
+        if (clean(item['id']) ==
+            clean(fav['item_id'])) {
+          items.add(item);
+        }
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: items.isEmpty
+          ? ListView(
+              children: const [
+                SizedBox(height: 200),
+                Center(
+                  child: Text(
+                    'لا توجد عناصر مفضلة.',
+                  ),
+                ),
+              ],
+            )
+          : ListView.builder(
+              padding:
+                  const EdgeInsets.all(12),
+              itemCount: items.length,
+              itemBuilder:
+                  (_, index) {
+                final item =
+                    items[index];
+
+                return Card(
+                  child:
+                      ListTile(
+                    leading:
+                        clean(
+                              item[
+                                  'image_url'],
+                            ).isNotEmpty
+                            ? CircleAvatar(
+                                backgroundImage:
+                                    NetworkImage(
+                                  clean(
+                                    item[
+                                        'image_url'],
+                                  ),
+                                ),
+                              )
+                            : const CircleAvatar(
+                                child:
+                                    Icon(
+                                  Icons
+                                      .movie,
+                                ),
+                              ),
+                    title:
+                        Text(
+                      clean(
+                        item[
+                            titleKey],
+                      ),
+                    ),
+                    trailing:
+                        IconButton(
+                      onPressed:
+                          () async {
+                        await data
+                            .toggleFavorite(
+                          type,
+                          item['id'],
+                        );
+                        await onRefresh();
+                      },
+                      icon:
+                          const Icon(
+                        Icons
+                            .favorite,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+/// =======================================================
+/// الدردشة
+/// =======================================================
+
+class PublicChatPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const PublicChatPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<PublicChatPage> createState() =>
+      _PublicChatPageState();
+}
+
+class _PublicChatPageState
+    extends State<PublicChatPage> {
+  final controller =
+      TextEditingController();
+
+  Timer? timer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    timer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) async {
+        await widget.data
+            .loadPublicChat();
+
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> send() async {
+    if (controller.text
+        .trim()
+        .isEmpty) {
+      return;
+    }
+
+    final ok =
+        await widget.data
+            .sendPublicChat(
+      controller.text,
+    );
+
+    if (!mounted) return;
+
+    if (ok) {
+      controller.clear();
+    } else {
+      showSnack(
+        context,
+        'تعذر إرسال الرسالة.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'الدردشة العامة',
+        ),
+        actions: [
+          IconButton(
+            onPressed:
+                () async {
+              await widget.data
+                  .loadPublicChat();
+
+              if (mounted) {
+                setState(() {});
+              }
+            },
+            icon:
+                const Icon(
+              Icons.refresh,
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child:
+                widget.data
+                        .publicChat
+                        .isEmpty
+                    ? const Center(
+                        child:
+                            Text(
+                          'لا توجد رسائل بعد.',
+                        ),
+                      )
+                    : ListView.builder(
+                        reverse: true,
+                        padding:
+                            const EdgeInsets.all(
+                          12,
+                        ),
+                        itemCount:
+                            widget.data
+                                .publicChat
+                                .length,
+                        itemBuilder:
+                            (_, index) {
+                          final item =
+                              widget.data
+                                      .publicChat[
+                                  index];
+
+                          final mine =
+                              clean(
+                                    item[
+                                        'account_id'],
+                                  ) ==
+                                  clean(
+                                    widget
+                                        .data
+                                        .currentAccountId,
+                                  );
+
+                          return Align(
+                            alignment:
+                                mine
+                                    ? Alignment
+                                        .centerRight
+                                    : Alignment
+                                        .centerLeft,
+                            child:
+                                Card(
+                              child:
+                                  Padding(
+                                padding:
+                                    const EdgeInsets.all(
+                                  12,
+                                ),
+                                child:
+                                    Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      clean(
+                                        item[
+                                            'user_name'],
+                                      ),
+                                      style:
+                                          const TextStyle(
+                                        fontWeight:
+                                            FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(
+                                      height:
+                                          4,
+                                    ),
+                                    Text(
+                                      clean(
+                                        item[
+                                            'message'],
+                                      ),
+                                    ),
+                                    if (widget
+                                        .data
+                                        .isAdmin)
+                                      IconButton(
+                                        onPressed:
+                                            () async {
+                                          await widget
+                                              .data
+                                              .deletePublicChat(
+                                            item[
+                                                'id'],
+                                          );
+
+                                          if (mounted) {
+                                            setState(
+                                              () {},
+                                            );
+                                          }
+                                        },
+                                        icon:
+                                            const Icon(
+                                          Icons
+                                              .delete,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+          Padding(
+            padding:
+                const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                Expanded(
+                  child:
+                      TextField(
+                    controller:
+                        controller,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'اكتب رسالتك',
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed:
+                      send,
+                  icon:
+                      const Icon(
+                    Icons.send,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// لعبة القفز
+/// =======================================================
+
+class JumpGamePage
+    extends StatefulWidget {
+  final AppData data;
+
+  const JumpGamePage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<JumpGamePage> createState() =>
+      _JumpGamePageState();
+}
+
+class _JumpGameState
+    extends State<JumpGamePage> {}
+
+class _JumpGamePageState
+    extends State<JumpGamePage> {
+  Timer? timer;
+
+  double playerY = 0;
+  double velocity = 0;
+
+  double rockX = 1.1;
+
+  bool playing = false;
+  bool gameOver = false;
+
+  int score = 0;
+  int best = 0;
+
+  DateTime lastScore =
+      DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    loadBest();
+  }
+
+  Future<void> loadBest() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    if (!mounted) return;
+
+    setState(() {
+      best =
+          prefs.getInt(
+                'mr_otaku_jump_best',
+              ) ??
+              0;
+    });
+  }
+
+  Future<void> saveBest() async {
+    final prefs =
+        await SharedPreferences.getInstance();
+
+    await prefs.setInt(
+      'mr_otaku_jump_best',
+      best,
+    );
+  }
+
+  void startGame() {
+    timer?.cancel();
+
+    setState(() {
+      playing = true;
+      gameOver = false;
+      playerY = 0;
+      velocity = 0;
+      rockX = 1.1;
+      score = 0;
+      lastScore = DateTime.now();
+    });
+
+    timer = Timer.periodic(
+      const Duration(
+        milliseconds: 30,
+      ),
+      (_) => updateGame(),
+    );
+  }
+
+  void updateGame() {
+    if (!mounted || !playing) return;
+
+    const gravity = -0.014;
+    const jumpPower = 0.25;
+
+    playerY += velocity;
+    velocity += gravity;
+
+    if (playerY < 0) {
+      playerY = 0;
+      velocity = 0;
+    }
+
+    final difficulty =
+        0.018 +
+            min(
+              score * 0.0007,
+              0.018,
+            );
+
+    rockX -= difficulty;
+
+    if (rockX < -1.2) {
+      rockX = 1.1;
+    }
+
+    final playerHitX =
+        rockX < -0.55 &&
+            rockX > -0.82;
+
+    final playerOnGround =
+        playerY < 0.10;
+
+    if (playerHitX &&
+        playerOnGround) {
+      endGame();
+      return;
+    }
+
+    if (DateTime.now()
+            .difference(lastScore)
+            .inMilliseconds >
+        900) {
+      lastScore =
+          DateTime.now();
+
+      setState(() {
+        score++;
+      });
+    }
+
+    setState(() {});
+  }
+
+  void jump() {
+    if (!playing) {
+      startGame();
+      return;
+    }
+
+    if (playerY <= 0.01) {
+      velocity = 0.25;
+    }
+  }
+
+  Future<void> endGame() async {
+    timer?.cancel();
+
+    setState(() {
+      playing = false;
+      gameOver = true;
+    });
+
+    if (score > best) {
+      best = score;
+      await saveBest();
+    }
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'لعبة القفز',
+        ),
+      ),
+      body:
+          GestureDetector(
+        onTap: jump,
+        child:
+            Container(
+          width:
+              double.infinity,
+          color:
+              const Color(
+            0xFF160707,
+          ),
+          child:
+              Column(
+            children: [
+              const SizedBox(
+                height: 15,
+              ),
+              Row(
+                mainAxisAlignment:
+                    MainAxisAlignment
+                        .spaceEvenly,
+                children: [
+                  Text(
+                    'النقاط: $score',
+                    style:
+                        const TextStyle(
+                      fontSize: 20,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'الأفضل: $best',
+                    style:
+                        const TextStyle(
+                      fontSize: 20,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              Expanded(
+                child:
+                    CustomPaint(
+                  painter:
+                      JumpPainter(
+                    playerY:
+                        playerY,
+                    rockX:
+                        rockX,
+                  ),
+                  child:
+                      Container(),
+                ),
+              ),
+              if (!playing)
+                Padding(
+                  padding:
+                      const EdgeInsets.all(
+                    20,
+                  ),
+                  child:
+                      Column(
+                    children: [
+                      Text(
+                        gameOver
+                            ? 'انتهت اللعبة! نتيجتك: $score'
+                            : 'اضغط للبدء',
+                        style:
+                            const TextStyle(
+                          fontSize: 22,
+                          fontWeight:
+                              FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 15,
+                      ),
+                      FilledButton.icon(
+                        onPressed:
+                            startGame,
+                        icon:
+                            const Icon(
+                          Icons
+                              .play_arrow,
+                        ),
+                        label:
+                            Text(
+                          gameOver
+                              ? 'إعادة اللعب'
+                              : 'ابدأ اللعبة',
+                        ),
+                      ),
+                      const SizedBox(
+                        height: 10,
+                      ),
+                      const Text(
+                        'اضغط على الشاشة للقفز فوق الصخور',
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class JumpPainter
+    extends CustomPainter {
+  final double playerY;
+  final double rockX;
+
+  JumpPainter({
+    required this.playerY,
+    required this.rockX,
+  });
+
+  @override
+  void paint(
+    Canvas canvas,
+    Size size,
+  ) {
+    final groundY =
+        size.height * 0.78;
+
+    final playerX =
+        size.width * 0.25;
+
+    final playerHeight =
+        55.0;
+
+    final py =
+        groundY -
+            playerY *
+                size.height *
+                0.75 -
+            playerHeight;
+
+    final player =
+        Paint()
+          ..style =
+              PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          playerX,
+          py,
+          40,
+          playerHeight,
+        ),
+        const Radius.circular(
+          10,
+        ),
+      ),
+      player,
+    );
+
+    final rockPaint =
+        Paint()
+          ..style =
+              PaintingStyle.fill;
+
+    final rockXPosition =
+        size.width *
+            ((rockX + 1) / 2);
+
+    final rockRect =
+        Rect.fromLTWH(
+      rockXPosition,
+      groundY - 40,
+      42,
+      40,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        rockRect,
+        const Radius.circular(
+          8,
+        ),
+      ),
+      rockPaint,
+    );
+
+    final groundPaint =
+        Paint()
+          ..style =
+              PaintingStyle.fill;
+
+    canvas.drawRect(
+      Rect.fromLTWH(
+        0,
+        groundY,
+        size.width,
+        5,
+      ),
+      groundPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant JumpPainter oldDelegate,
+  ) {
+    return oldDelegate.playerY !=
+            playerY ||
+        oldDelegate.rockX != rockX;
+  }
+}
+
+/// =======================================================
+/// المتصدرون
+/// =======================================================
+
+class LeaderboardPage
+    extends StatelessWidget {
+  final AppData data;
+
+  const LeaderboardPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final list = [...data.players];
+
+    list.sort(
+      (a, b) =>
+          toInt(b['points'])
+              .compareTo(
+        toInt(a['points']),
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text(
+          'المتصدرون',
+        ),
+      ),
+      body:
+          list.isEmpty
+              ? const Center(
+                  child:
+                      Text(
+                    'لا يوجد لاعبون.',
+                  ),
+                )
+              : ListView.builder(
+                  padding:
+                      const EdgeInsets.all(
+                    12,
+                  ),
+                  itemCount:
+                      list.length,
+                  itemBuilder:
+                      (_, index) {
+                    final player =
+                        list[index];
+
+                    final points =
+                        toInt(
+                      player['points'],
+                    );
+
+                    final badge =
+                        getCurrentBadge(
+                      points,
+                    );
+
+                    return Card(
+                      child:
+                          ListTile(
+                        leading:
+                            CircleAvatar(
+                          child:
+                              Text(
+                            '${index + 1}',
+                          ),
+                        ),
+                        title:
+                            Text(
+                          clean(
+                            player[
+                                'name'],
+                          ),
+                        ),
+                        subtitle:
+                            Text(
+                          'المستوى ${getUserLevel(points)}'
+                          '${badge == null ? '' : ' • ${badge.icon} ${badge.name}'}',
+                        ),
+                        trailing:
+                            Text(
+                          '$points نقطة',
+                          style:
+                              const TextStyle(
+                            fontWeight:
+                                FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+/// =======================================================
+/// المتجر
+/// =======================================================
+
+class ShopPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const ShopPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<ShopPage> createState() =>
+      _ShopPageState();
+}
+
+class _ShopPageState
+    extends State<ShopPage> {
+  Map<String, dynamic>?
+      selectedPlayer;
+
+  @override
+  void initState() {
+    super.initState();
+
+    selectedPlayer =
+        widget.data.currentPlayer;
+
+    selectedPlayer ??=
+        widget.data.players.isNotEmpty
+            ? widget.data.players.first
+            : null;
+  }
+
+  Future<void> buy(
+    String item,
+    int cost,
+  ) async {
+    if (selectedPlayer == null) {
+      showSnack(
+        context,
+        'لم يتم العثور على حساب.',
+      );
+      return;
+    }
+
+    final points =
+        toInt(
+      selectedPlayer!['points'],
+    );
+
+    if (points < cost) {
+      showSnack(
+        context,
+        'نقاطك غير كافية.',
+      );
+      return;
+    }
+
+    final ok =
+        await widget.data
+            .createPurchaseRequest(
+      selectedPlayer!['id'],
+      item,
+      cost,
+    );
+
+    if (!mounted) return;
+
+    showSnack(
+      context,
+      ok
+          ? 'تم إرسال طلب الشراء للإدارة.'
+          : 'تعذر إرسال الطلب.',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'متجر النقاط',
+        ),
+      ),
+      body:
+          ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          if (selectedPlayer != null)
+            Card(
+              child:
+                  ListTile(
+                leading:
+                    const CircleAvatar(
+                  child:
+                      Icon(
+                    Icons.person,
+                  ),
+                ),
+                title:
+                    Text(
+                  clean(
+                    selectedPlayer![
+                        'name'],
+                  ),
+                ),
+                subtitle:
+                    Text(
+                  '${toInt(selectedPlayer!['points'])} نقطة',
+                ),
+              ),
+            ),
+          const SizedBox(
+            height: 15,
+          ),
+          _ShopItem(
+            title:
+                'تغيير اسم المجموعة',
+            cost: 5,
+            icon:
+                Icons.edit,
+            onBuy:
+                () =>
+                    buy(
+              'تغيير اسم المجموعة',
+              5,
+            ),
+          ),
+          _ShopItem(
+            title:
+                'أيقونة خاصة',
+            cost: 10,
+            icon:
+                Icons.image,
+            onBuy:
+                () =>
+                    buy(
+              'أيقونة خاصة',
+              10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShopItem
+    extends StatelessWidget {
+  final String title;
+  final int cost;
+  final IconData icon;
+  final VoidCallback onBuy;
+
+  const _ShopItem({
+    required this.title,
+    required this.cost,
+    required this.icon,
+    required this.onBuy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin:
+          const EdgeInsets.only(
+        bottom: 12,
+      ),
+      child:
+          ListTile(
+        leading:
+            CircleAvatar(
+          child:
+              Icon(icon),
+        ),
+        title:
+            Text(
+          title,
+          style:
+              const TextStyle(
+            fontWeight:
+                FontWeight.bold,
+          ),
+        ),
+        subtitle:
+            Text('$cost نقاط'),
+        trailing:
+            FilledButton(
+          onPressed:
+              onBuy,
+          child:
+              const Text(
+            'شراء',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// إرسال رسالة للإدارة
+/// =======================================================
 
 class SendMessagePage
     extends StatefulWidget {
@@ -3091,58 +6405,29 @@ class SendMessagePage
 
 class _SendMessagePageState
     extends State<SendMessagePage> {
-  final nameController =
+  final controller =
       TextEditingController();
-
-  final messageController =
-      TextEditingController();
-
-  bool sending = false;
 
   Future<void> send() async {
-    await playClickSound();
-
-    if (nameController.text
-            .trim()
-            .isEmpty ||
-        messageController.text
-            .trim()
-            .isEmpty) {
-      showSnack(
-        context,
-        'أكمل جميع الحقول.',
-      );
-      return;
-    }
-
-    setState(() {
-      sending = true;
-    });
-
-    final success =
+    final ok =
         await widget.data.sendMessage(
-      nameController.text.trim(),
-      messageController.text.trim(),
+      widget.data.currentUserName,
+      controller.text,
     );
 
     if (!mounted) return;
 
-    setState(() {
-      sending = false;
-    });
-
-    if (success) {
-      nameController.clear();
-      messageController.clear();
+    if (ok) {
+      controller.clear();
 
       showSnack(
         context,
-        'تم إرسال الرسالة بنجاح.',
+        'تم إرسال رسالتك للإدارة.',
       );
     } else {
       showSnack(
         context,
-        'حدث خطأ أثناء إرسال الرسالة.',
+        'تعذر إرسال الرسالة.',
       );
     }
   }
@@ -3150,273 +6435,58 @@ class _SendMessagePageState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('إرسال رسالة'),
+            const Text(
+          'إرسال رسالة',
+        ),
       ),
-      body: ListView(
+      body:
+          Padding(
         padding:
             const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller:
-                nameController,
-            decoration:
-                const InputDecoration(
-              labelText: 'الاسم',
-              prefixIcon:
-                  Icon(Icons.person),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller:
-                messageController,
-            maxLines: 6,
-            decoration:
-                const InputDecoration(
-              labelText: 'الرسالة',
-              alignLabelWithHint:
-                  true,
-              prefixIcon:
-                  Icon(Icons.message),
-            ),
-          ),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed:
-                sending ? null : send,
-            icon:
-                const Icon(Icons.send),
-            label: Text(
-              sending
-                  ? 'جارٍ الإرسال...'
-                  : 'إرسال',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// ===============================
-/// النقاط
-/// ===============================
-
-class PointsPage
-    extends StatefulWidget {
-  final AppData data;
-
-  const PointsPage({
-    super.key,
-    required this.data,
-  });
-
-  @override
-  State<PointsPage> createState() =>
-      _PointsPageState();
-}
-
-class _PointsPageState
-    extends State<PointsPage> {
-  String search = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final results =
-        widget.data.players.where(
-      (player) {
-        final name =
-            (player['name'] ?? '')
-                .toString()
-                .toLowerCase();
-
-        return name.contains(
-          search.toLowerCase(),
-        );
-      },
-    ).toList();
-
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('نقاط المسابقة'),
-      ),
-      body: ListView(
-        padding:
-            const EdgeInsets.all(16),
-        children: [
-          TextField(
-            onChanged: (value) {
-              setState(() {
-                search = value;
-              });
-            },
-            decoration:
-                const InputDecoration(
-              hintText:
-                  'ابحث باسمك...',
-              prefixIcon:
-                  Icon(Icons.search),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (results.isEmpty)
-            const EmptyState(
-              text:
-                  'لم يتم العثور على اسم.',
-            )
-          else
-            ...results.map(
-              (player) {
-                final points =
-                    int.tryParse(
-                          player['points']
-                              .toString(),
-                        ) ??
-                        0;
-
-                final badges =
-                    getEarnedBadges(
-                  points,
-                );
-
-                return Card(
-                  margin:
-                      const EdgeInsets.only(
-                    bottom: 12,
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.all(
-                      14,
-                    ),
-                    child: Column(
-                      children: [
-                        ListTile(
-                          contentPadding:
-                              EdgeInsets.zero,
-                          leading:
-                              const CircleAvatar(
-                            child: Icon(
-                              Icons.person,
-                            ),
-                          ),
-                          title: Text(
-                            (player[
-                                        'name'] ??
-                                    '')
-                                .toString(),
-                            style:
-                                const TextStyle(
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
-                          ),
-                          trailing:
-                              Text(
-                            '$points نقطة',
-                            style:
-                                const TextStyle(
-                              fontWeight:
-                                  FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        if (badges
-                            .isNotEmpty) ...[
-                          const Divider(),
-                          const Align(
-                            alignment:
-                                Alignment
-                                    .centerRight,
-                            child: Text(
-                              'الشارات المكتسبة',
-                              style:
-                                  TextStyle(
-                                fontWeight:
-                                    FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 8,
-                          ),
-                          Wrap(
-                            spacing: 7,
-                            runSpacing: 7,
-                            children:
-                                badges.map(
-                              (badge) {
-                                return Chip(
-                                  avatar:
-                                      Text(
-                                    badge
-                                        .icon,
-                                  ),
-                                  label:
-                                      Text(
-                                    badge
-                                        .name,
-                                  ),
-                                );
-                              },
-                            ).toList(),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// ===============================
-/// كل جديد
-/// ===============================
-
-class LatestPage
-    extends StatelessWidget {
-  final AppData data;
-
-  const LatestPage({
-    super.key,
-    required this.data,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('كل جديد'),
-      ),
-      body: RefreshIndicator(
-        onRefresh:
-            data.loadData,
-        child: ListView(
-          padding:
-              const EdgeInsets.all(16),
+        child:
+            Column(
           children: [
-            if (data.latest.isEmpty)
-              const EmptyState(
-                text:
-                    'لا توجد منشورات جديدة حالياً.',
-              )
-            else
-              ...data.latest.map(
-                (item) =>
-                    LatestCard(
-                  item: item,
+            Text(
+              'سيتم إرسال الرسالة باسم ${widget.data.currentUserName}',
+            ),
+            const SizedBox(
+              height: 15,
+            ),
+            TextField(
+              controller:
+                  controller,
+              maxLines: 7,
+              decoration:
+                  const InputDecoration(
+                labelText:
+                    'رسالتك',
+                alignLabelWithHint:
+                    true,
+              ),
+            ),
+            const SizedBox(
+              height: 15,
+            ),
+            SizedBox(
+              width:
+                  double.infinity,
+              child:
+                  FilledButton.icon(
+                onPressed:
+                    send,
+                icon:
+                    const Icon(
+                  Icons.send,
+                ),
+                label:
+                    const Text(
+                  'إرسال',
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -3424,9 +6494,9 @@ class LatestPage
   }
 }
 
-/// ===============================
+/// =======================================================
 /// الإعدادات
-/// ===============================
+/// =======================================================
 
 class SettingsPage
     extends StatelessWidget {
@@ -3437,62 +6507,160 @@ class SettingsPage
     required this.data,
   });
 
+  Future<void> logout(
+    BuildContext context,
+  ) async {
+    await playClickSound();
+
+    await data.logoutAccount();
+
+    if (!context.mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            AccountSetupPage(
+          data: data,
+        ),
+      ),
+      (_) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding:
-          const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: ListTile(
-            leading:
-                const CircleAvatar(
-              child: Icon(
-                Icons
-                    .admin_panel_settings,
+    final badge =
+        data.currentBadge;
+
+    return Scaffold(
+      appBar: AppBar(
+        title:
+            const Text(
+          'الإعدادات',
+        ),
+      ),
+      body:
+          ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          Card(
+            child:
+                Padding(
+              padding:
+                  const EdgeInsets.all(
+                18,
+              ),
+              child:
+                  Column(
+                children: [
+                  const CircleAvatar(
+                    radius: 35,
+                    child:
+                        Icon(
+                      Icons.person,
+                      size: 35,
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  Text(
+                    data.currentUserName,
+                    style:
+                        const TextStyle(
+                      fontSize: 21,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'معرف الحساب: ${data.currentAccountId}',
+                  ),
+                  Text(
+                    'المستوى: ${data.currentLevel}',
+                  ),
+                  Text(
+                    'النقاط: ${data.currentPoints}',
+                  ),
+                  if (badge != null)
+                    Text(
+                      '${badge.icon} ${badge.name}',
+                    ),
+                ],
               ),
             ),
-            title: const Text(
-              'مركز التحكم',
-              style: TextStyle(
-                fontWeight:
-                    FontWeight.bold,
-              ),
-            ),
-            subtitle: const Text(
-              'إدارة الأخبار والنقاط والمنشورات والرسائل',
-            ),
-            trailing:
-                const Icon(
-              Icons.arrow_forward_ios,
-            ),
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+          ),
+          const SizedBox(
+            height: 12,
+          ),
+          ServiceTile(
+            icon:
+                Icons.notifications,
+            title:
+                'الإشعارات',
+            subtitle:
+                'عرض إشعارات الإدارة',
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) =>
-                      AdminLoginPage(
+                      NotificationsPage(
                     data: data,
                   ),
                 ),
               );
             },
           ),
-        ),
-      ],
+          if (data.isAdmin)
+            ServiceTile(
+              icon:
+                  Icons.admin_panel_settings,
+              title:
+                  'لوحة الإدارة',
+              subtitle:
+                  'إدارة التطبيق',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        AdminPanelPage(
+                      data: data,
+                    ),
+                  ),
+                );
+              },
+            ),
+          Card(
+            child:
+                ListTile(
+              leading:
+                  const Icon(
+                Icons.logout,
+              ),
+              title:
+                  const Text(
+                'تسجيل الخروج',
+              ),
+              onTap:
+                  () =>
+                      logout(
+                context,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// ===============================
+/// =======================================================
 /// تسجيل دخول المدير
-/// ===============================
+/// =======================================================
 
 class AdminLoginPage
     extends StatefulWidget {
@@ -3510,27 +6678,19 @@ class AdminLoginPage
 
 class _AdminLoginPageState
     extends State<AdminLoginPage> {
-  final emailController =
+  final email =
       TextEditingController();
 
-  final passwordController =
+  final password =
       TextEditingController();
 
   bool loading = false;
-  bool obscure = true;
 
   Future<void> login() async {
-    await playClickSound();
-
-    if (emailController.text
+    if (email.text
             .trim()
             .isEmpty ||
-        passwordController.text
-            .isEmpty) {
-      showSnack(
-        context,
-        'أدخل البريد الإلكتروني وكلمة المرور.',
-      );
+        password.text.isEmpty) {
       return;
     }
 
@@ -3539,22 +6699,20 @@ class _AdminLoginPageState
     });
 
     try {
-      final response =
+      final result =
           await supabase.auth
               .signInWithPassword(
         email:
-            emailController.text.trim(),
+            email.text.trim(),
         password:
-            passwordController.text,
+            password.text,
       );
 
       final user =
-          response.user;
+          result.user;
 
       if (user == null) {
-        throw Exception(
-          'فشل تسجيل الدخول.',
-        );
+        throw Exception();
       }
 
       final admin =
@@ -3568,15 +6726,13 @@ class _AdminLoginPageState
               .maybeSingle();
 
       if (admin == null) {
-        await supabase.auth
-            .signOut();
-
+        await supabase.auth.signOut();
         throw Exception(
-          'ليس حساب مدير',
+          'not_admin',
         );
       }
 
-      widget.data
+      await widget.data
           .setAdminSession(true);
 
       await widget.data
@@ -3584,7 +6740,7 @@ class _AdminLoginPageState
 
       if (!mounted) return;
 
-      Navigator.pushReplacement(
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
           builder: (_) =>
@@ -3592,28 +6748,15 @@ class _AdminLoginPageState
             data: widget.data,
           ),
         ),
+        (_) => false,
       );
     } catch (e) {
-      if (!mounted) return;
-
-      String message =
-          'حدث خطأ أثناء تسجيل الدخول.';
-
-      if (e is AuthException) {
-        message = e.message;
-      } else if (e
-          .toString()
-          .contains(
-            'ليس حساب مدير',
-          )) {
-        message =
-            'هذا الحساب ليس مسجلاً كمدير.';
+      if (mounted) {
+        showSnack(
+          context,
+          'بيانات الدخول غير صحيحة أو الحساب ليس مديراً.',
+        );
       }
-
-      showSnack(
-        context,
-        message,
-      );
     }
 
     if (mounted) {
@@ -3626,110 +6769,75 @@ class _AdminLoginPageState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('دخول الإدارة'),
+            const Text(
+          'دخول الإدارة',
+        ),
       ),
-      body: ListView(
+      body:
+          Padding(
         padding:
             const EdgeInsets.all(20),
-        children: [
-          const SizedBox(
-            height: 30,
-          ),
-          const Icon(
-            Icons.admin_panel_settings,
-            size: 80,
-          ),
-          const SizedBox(
-            height: 20,
-          ),
-          const Text(
-            'مركز التحكم',
-            textAlign:
-                TextAlign.center,
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight:
-                  FontWeight.bold,
-            ),
-          ),
-          const SizedBox(
-            height: 30,
-          ),
-          TextField(
-            controller:
-                emailController,
-            keyboardType:
-                TextInputType
-                    .emailAddress,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'البريد الإلكتروني',
-              prefixIcon:
-                  Icon(Icons.email),
-            ),
-          ),
-          const SizedBox(
-            height: 14,
-          ),
-          TextField(
-            controller:
-                passwordController,
-            obscureText:
-                obscure,
-            decoration:
-                InputDecoration(
-              labelText:
-                  'كلمة المرور',
-              prefixIcon:
-                  const Icon(
-                Icons.lock,
+        child:
+            Column(
+          children: [
+            TextField(
+              controller:
+                  email,
+              keyboardType:
+                  TextInputType.emailAddress,
+              decoration:
+                  const InputDecoration(
+                labelText:
+                    'البريد الإلكتروني',
               ),
-              suffixIcon:
-                  IconButton(
+            ),
+            const SizedBox(
+              height: 12,
+            ),
+            TextField(
+              controller:
+                  password,
+              obscureText:
+                  true,
+              decoration:
+                  const InputDecoration(
+                labelText:
+                    'كلمة المرور',
+              ),
+            ),
+            const SizedBox(
+              height: 18,
+            ),
+            SizedBox(
+              width:
+                  double.infinity,
+              child:
+                  FilledButton(
                 onPressed:
-                    () async {
-                  await playClickSound();
-
-                  setState(() {
-                    obscure =
-                        !obscure;
-                  });
-                },
-                icon: Icon(
-                  obscure
-                      ? Icons.visibility
-                      : Icons
-                          .visibility_off,
-                ),
+                    loading
+                        ? null
+                        : login,
+                child:
+                    loading
+                        ? const CircularProgressIndicator()
+                        : const Text(
+                            'دخول',
+                          ),
               ),
             ),
-          ),
-          const SizedBox(
-            height: 20,
-          ),
-          FilledButton(
-            onPressed:
-                loading
-                    ? null
-                    : login,
-            child: Text(
-              loading
-                  ? 'جارٍ الدخول...'
-                  : 'تسجيل الدخول',
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// ===============================
+/// =======================================================
 /// لوحة الإدارة
-/// ===============================
+/// =======================================================
 
 class AdminPanelPage
     extends StatelessWidget {
@@ -3743,14 +6851,8 @@ class AdminPanelPage
   Future<void> logout(
     BuildContext context,
   ) async {
-    await playClickSound();
-
-    await supabase.auth
-        .signOut();
-
-    data.setAdminSession(false);
-
-    await data.loadData();
+    await supabase.auth.signOut();
+    await data.setAdminSession(false);
 
     if (!context.mounted) return;
 
@@ -3758,52 +6860,123 @@ class AdminPanelPage
       context,
       MaterialPageRoute(
         builder: (_) =>
-            HomePage(data: data),
+            AccountSetupPage(
+          data: data,
+        ),
       ),
-      (route) => false,
+      (_) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!data.isAdmin) {
+      return Scaffold(
+        appBar: AppBar(
+          title:
+              const Text(
+            'الإدارة',
+          ),
+        ),
+        body:
+            Center(
+          child:
+              FilledButton(
+            onPressed:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      AdminLoginPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+            child:
+                const Text(
+              'دخول الإدارة',
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('مركز التحكم'),
+            const Text(
+          'لوحة الإدارة',
+        ),
         actions: [
           IconButton(
-            tooltip:
-                'تسجيل الخروج',
-            onPressed: () =>
-                logout(context),
+            onPressed:
+                () =>
+                    logout(
+              context,
+            ),
             icon:
-                const Icon(Icons.logout),
+                const Icon(
+              Icons.logout,
+            ),
           ),
         ],
       ),
-      body: ListView(
+      body:
+          ListView(
         padding:
             const EdgeInsets.all(16),
         children: [
           AdminTile(
             icon:
-                Icons.shopping_cart,
+                Icons.quiz,
             title:
-                'طلبات الشراء',
-            subtitle:
-                'مراجعة والموافقة على طلبات النقاط',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+                'إدارة الأسئلة',
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) =>
-                      ManagePurchaseRequestsPage(
+                      ManageQuizPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          AdminTile(
+            icon:
+                Icons.person,
+            title:
+                'إدارة الشخصيات',
+            onTap:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManageCharactersPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          AdminTile(
+            icon:
+                Icons.movie,
+            title:
+                'إدارة الأنميات',
+            onTap:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManageAnimePage(
                     data: data,
                   ),
                 ),
@@ -3815,15 +6988,8 @@ class AdminPanelPage
                 Icons.newspaper,
             title:
                 'إدارة الأخبار',
-            subtitle:
-                'إضافة وحذف الأخبار مع الصور',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3837,43 +7003,11 @@ class AdminPanelPage
           ),
           AdminTile(
             icon:
-                Icons.poll,
-            title:
-                'إدارة الاستطلاعات',
-            subtitle:
-                'إنشاء استطلاع جديد للصفحة الرئيسية',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      ManagePollPage(
-                    data: data,
-                  ),
-                ),
-              );
-            },
-          ),
-          AdminTile(
-            icon:
                 Icons.notifications,
             title:
                 'إدارة الإشعارات',
-            subtitle:
-                'إرسال إشعار جديد لجميع المستخدمين',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3887,18 +7021,29 @@ class AdminPanelPage
           ),
           AdminTile(
             icon:
-                Icons.emoji_events,
+                Icons.poll,
             title:
-                'إدارة نقاط المسابقة',
-            subtitle:
-                'إضافة وتعديل وحذف النقاط',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+                'إدارة الاستطلاعات',
+            onTap:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManagePollPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          AdminTile(
+            icon:
+                Icons.people,
+            title:
+                'إدارة اللاعبين والحسابات',
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3915,15 +7060,8 @@ class AdminPanelPage
                 Icons.campaign,
             title:
                 'إدارة كل جديد',
-            subtitle:
-                'إضافة وحذف المنشورات',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -3937,23 +7075,52 @@ class AdminPanelPage
           ),
           AdminTile(
             icon:
-                Icons.mail,
+                Icons.message,
             title:
                 'الرسائل',
-            subtitle:
-                'عرض وحذف رسائل المستخدمين',
-            onTap: () async {
-              await playClickSound();
-
-              if (!context.mounted) {
-                return;
-              }
-
+            onTap:
+                () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) =>
                       ManageMessagesPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          AdminTile(
+            icon:
+                Icons.chat,
+            title:
+                'الدردشة العامة',
+            onTap:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      PublicChatPage(
+                    data: data,
+                  ),
+                ),
+              );
+            },
+          ),
+          AdminTile(
+            icon:
+                Icons.shopping_bag,
+            title:
+                'طلبات المتجر',
+            onTap:
+                () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManagePurchaseRequestsPage(
                     data: data,
                   ),
                 ),
@@ -3966,22 +7133,16 @@ class AdminPanelPage
   }
 }
 
-/// ===============================
-/// Admin Tile
-/// ===============================
-
 class AdminTile
     extends StatelessWidget {
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   const AdminTile({
     super.key,
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
@@ -3990,16 +7151,19 @@ class AdminTile
     return Card(
       margin:
           const EdgeInsets.only(
-        bottom: 12,
+        bottom: 10,
       ),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.all(14),
+      child:
+          ListTile(
+        onTap:
+            onTap,
         leading:
             CircleAvatar(
-          child: Icon(icon),
+          child:
+              Icon(icon),
         ),
-        title: Text(
+        title:
+            Text(
           title,
           style:
               const TextStyle(
@@ -4007,22 +7171,1205 @@ class AdminTile
                 FontWeight.bold,
           ),
         ),
-        subtitle:
-            Text(subtitle),
         trailing:
             const Icon(
-          Icons.arrow_forward_ios,
-          size: 16,
+          Icons.arrow_back_ios,
         ),
-        onTap: onTap,
       ),
     );
   }
 }
 
-/// ===============================
+/// =======================================================
+/// إدارة الأسئلة
+/// =======================================================
+
+class ManageQuizPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const ManageQuizPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<ManageQuizPage> createState() =>
+      _ManageQuizPageState();
+}
+
+class _ManageQuizPageState
+    extends State<ManageQuizPage> {
+  @override
+  Widget build(BuildContext context) {
+    final list =
+        widget.data.quizQuestions;
+
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'إدارة الأسئلة',
+        ),
+      ),
+      floatingActionButton:
+          FloatingActionButton(
+        onPressed:
+            () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  QuizEditorPage(
+                data: widget.data,
+              ),
+            ),
+          );
+
+          setState(() {});
+        },
+        child:
+            const Icon(
+          Icons.add,
+        ),
+      ),
+      body:
+          list.isEmpty
+              ? const Center(
+                  child:
+                      Text(
+                    'لا توجد أسئلة.',
+                  ),
+                )
+              : ListView.builder(
+                  padding:
+                      const EdgeInsets.all(
+                    12,
+                  ),
+                  itemCount:
+                      list.length,
+                  itemBuilder:
+                      (_, index) {
+                    final q =
+                        list[index];
+
+                    return Card(
+                      child:
+                          ListTile(
+                        title:
+                            Text(
+                          clean(
+                            q['question'],
+                          ),
+                        ),
+                        subtitle:
+                            Text(
+                          quizTypeName(
+                            clean(
+                                  q['quiz_type'],
+                                ).isEmpty
+                                ? 'direct'
+                                : clean(
+                                    q['quiz_type'],
+                                  ),
+                          ),
+                        ),
+                        trailing:
+                            Row(
+                          mainAxisSize:
+                              MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed:
+                                  () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder:
+                                        (_) =>
+                                            QuizEditorPage(
+                                      data:
+                                          widget.data,
+                                      question:
+                                          q,
+                                    ),
+                                  ),
+                                );
+
+                                setState(
+                                  () {},
+                                );
+                              },
+                              icon:
+                                  const Icon(
+                                Icons.edit,
+                              ),
+                            ),
+                            IconButton(
+                              onPressed:
+                                  () async {
+                                await widget.data
+                                    .deleteQuizQuestion(
+                                  q[
+                                      'id'],
+                                );
+
+                                setState(
+                                  () {},
+                                );
+                              },
+                              icon:
+                                  const Icon(
+                                Icons.delete,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+/// =======================================================
+/// محرر الأسئلة
+/// =======================================================
+
+class QuizEditorPage
+    extends StatefulWidget {
+  final AppData data;
+  final Map<String, dynamic>?
+      question;
+
+  const QuizEditorPage({
+    super.key,
+    required this.data,
+    this.question,
+  });
+
+  @override
+  State<QuizEditorPage> createState() =>
+      _QuizEditorPageState();
+}
+
+class _QuizEditorPageState
+    extends State<QuizEditorPage> {
+  late final TextEditingController
+      question;
+
+  late final TextEditingController
+      option1;
+
+  late final TextEditingController
+      option2;
+
+  late final TextEditingController
+      option3;
+
+  late final TextEditingController
+      option4;
+
+  late int correct;
+
+  String type = 'direct';
+
+  File? imageFile;
+  String? imageUrl;
+  bool saving = false;
+
+  bool get editing =>
+      widget.question != null;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final q =
+        widget.question;
+
+    question =
+        TextEditingController(
+      text: clean(
+        q?['question'],
+      ),
+    );
+
+    option1 =
+        TextEditingController(
+      text: clean(
+        q?['option1'],
+      ),
+    );
+
+    option2 =
+        TextEditingController(
+      text: clean(
+        q?['option2'],
+      ),
+    );
+
+    option3 =
+        TextEditingController(
+      text: clean(
+        q?['option3'],
+      ),
+    );
+
+    option4 =
+        TextEditingController(
+      text: clean(
+        q?['option4'],
+      ),
+    );
+
+    correct =
+        toInt(
+      q?['correct_option'],
+    );
+
+    if (correct < 1 ||
+        correct > 4) {
+      correct = 1;
+    }
+
+    type =
+        clean(
+              q?['quiz_type'],
+            ).isEmpty
+            ? 'direct'
+            : clean(
+                q?['quiz_type'],
+              );
+
+    imageUrl =
+        clean(
+      q?['image_url'],
+    );
+
+    if (imageUrl!.isEmpty) {
+      imageUrl = null;
+    }
+  }
+
+  Future<void> pickImage() async {
+    final picker =
+        ImagePicker();
+
+    final picked =
+        await picker.pickImage(
+      source:
+          ImageSource.gallery,
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      imageFile =
+          File(picked.path);
+    });
+  }
+
+  Future<void> save() async {
+    if (question.text
+            .trim()
+            .isEmpty ||
+        option1.text
+            .trim()
+            .isEmpty ||
+        option2.text
+            .trim()
+            .isEmpty ||
+        option3.text
+            .trim()
+            .isEmpty ||
+        option4.text
+            .trim()
+            .isEmpty) {
+      showSnack(
+        context,
+        'أكمل جميع الحقول.',
+      );
+      return;
+    }
+
+    setState(() {
+      saving = true;
+    });
+
+    String? finalImage =
+        imageUrl;
+
+    if (type ==
+        'image_character') {
+      if (imageFile != null) {
+        finalImage =
+            await widget.data
+                .uploadQuizImage(
+          imageFile!,
+        );
+      }
+
+      if (finalImage == null ||
+          finalImage!.isEmpty) {
+        if (mounted) {
+          showSnack(
+            context,
+            'أضف صورة لهذا النوع من الأسئلة.',
+          );
+        }
+
+        setState(() {
+          saving = false;
+        });
+
+        return;
+      }
+    } else {
+      finalImage = null;
+    }
+
+    bool ok;
+
+    if (editing) {
+      ok = await widget.data
+          .updateQuizQuestion(
+        id: widget.question![
+            'id'],
+        question:
+            question.text,
+        option1:
+            option1.text,
+        option2:
+            option2.text,
+        option3:
+            option3.text,
+        option4:
+            option4.text,
+        correctOption:
+            correct,
+        quizType:
+            type,
+        imageUrl:
+            finalImage,
+      );
+    } else {
+      ok = await widget.data
+          .addQuizQuestion(
+        question:
+            question.text,
+        option1:
+            option1.text,
+        option2:
+            option2.text,
+        option3:
+            option3.text,
+        option4:
+            option4.text,
+        correctOption:
+            correct,
+        quizType:
+            type,
+        imageUrl:
+            finalImage,
+      );
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      saving = false;
+    });
+
+    if (ok) {
+      Navigator.pop(context);
+    } else {
+      showSnack(
+        context,
+        'تعذر حفظ السؤال.',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            Text(
+          editing
+              ? 'تعديل السؤال'
+              : 'إضافة سؤال',
+        ),
+      ),
+      body:
+          ListView(
+        padding:
+            const EdgeInsets.all(16),
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue:
+                type,
+            decoration:
+                const InputDecoration(
+              labelText:
+                  'نوع السؤال',
+            ),
+            items: const [
+              DropdownMenuItem(
+                value:
+                    'direct',
+                child:
+                    Text(
+                  'أسئلة مباشرة',
+                ),
+              ),
+              DropdownMenuItem(
+                value:
+                    'guess_character',
+                child:
+                    Text(
+                  'احزر الشخصية',
+                ),
+              ),
+              DropdownMenuItem(
+                value:
+                    'image_character',
+                child:
+                    Text(
+                  'خمن الشخصية من الصورة',
+                ),
+              ),
+            ],
+            onChanged:
+                (value) {
+              if (value == null)
+                return;
+
+              setState(() {
+                type = value;
+              });
+            },
+          ),
+          const SizedBox(
+            height: 12,
+          ),
+          TextField(
+            controller:
+                question,
+            maxLines: 3,
+            decoration:
+                const InputDecoration(
+              labelText:
+                  'السؤال',
+            ),
+          ),
+          const SizedBox(
+            height: 12,
+          ),
+          for (final item in [
+            option1,
+            option2,
+            option3,
+            option4,
+          ])
+            Padding(
+              padding:
+                  const EdgeInsets.only(
+                bottom: 10,
+              ),
+              child:
+                  TextField(
+                controller:
+                    item,
+                decoration:
+                    InputDecoration(
+                  labelText:
+                      'الخيار ${[option1, option2, option3, option4].indexOf(item) + 1}',
+                ),
+              ),
+            ),
+          DropdownButtonFormField<int>(
+            initialValue:
+                correct,
+            decoration:
+                const InputDecoration(
+              labelText:
+                  'الإجابة الصحيحة',
+            ),
+            items: List.generate(
+              4,
+              (index) {
+                return DropdownMenuItem(
+                  value:
+                      index + 1,
+                  child:
+                      Text(
+                    'الخيار ${index + 1}',
+                  ),
+                );
+              },
+            ),
+            onChanged:
+                (value) {
+              if (value != null) {
+                setState(() {
+                  correct =
+                      value;
+                });
+              }
+            },
+          ),
+          if (type ==
+              'image_character') ...[
+            const SizedBox(
+              height: 15,
+            ),
+            if (imageFile != null)
+              Image.file(
+                imageFile!,
+                height: 180,
+                fit: BoxFit.contain,
+              )
+            else if (imageUrl != null)
+              Image.network(
+                imageUrl!,
+                height: 180,
+                fit: BoxFit.contain,
+              ),
+            const SizedBox(
+              height: 10,
+            ),
+            OutlinedButton.icon(
+              onPressed:
+                  pickImage,
+              icon:
+                  const Icon(
+                Icons.image,
+              ),
+              label:
+                  const Text(
+                'اختيار صورة الشخصية',
+              ),
+            ),
+          ],
+          const SizedBox(
+            height: 20,
+          ),
+          FilledButton(
+            onPressed:
+                saving
+                    ? null
+                    : save,
+            child:
+                saving
+                    ? const CircularProgressIndicator()
+                    : const Text(
+                        'حفظ السؤال',
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// إدارة الشخصيات
+/// =======================================================
+
+class ManageCharactersPage
+    extends StatefulWidget {
+  final AppData data;
+
+  const ManageCharactersPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<ManageCharactersPage> createState() =>
+      _ManageCharactersPageState();
+}
+
+class _ManageCharactersPageState
+    extends State<ManageCharactersPage> {
+  Future<void> edit([
+    Map<String, dynamic>? item,
+  ]) async {
+    final name =
+        TextEditingController(
+      text:
+          clean(item?['name']),
+    );
+
+    final description =
+        TextEditingController(
+      text:
+          clean(
+        item?['description'],
+      ),
+    );
+
+    File? file;
+    String? image =
+        clean(
+      item?['image_url'],
+    );
+
+    await showDialog(
+      context: context,
+      builder:
+          (_) => StatefulBuilder(
+        builder:
+            (context, setState) {
+          return AlertDialog(
+            title:
+                Text(
+              item == null
+                  ? 'إضافة شخصية'
+                  : 'تعديل شخصية',
+            ),
+            content:
+                SingleChildScrollView(
+              child:
+                  Column(
+                children: [
+                  TextField(
+                    controller:
+                        name,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'اسم الشخصية',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  TextField(
+                    controller:
+                        description,
+                    maxLines:
+                        3,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'الوصف',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  if (file != null)
+                    Image.file(
+                      file!,
+                      height:
+                          120,
+                    )
+                  else if (image
+                      .isNotEmpty)
+                    Image.network(
+                      image,
+                      height:
+                          120,
+                    ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        () async {
+                      final picker =
+                          ImagePicker();
+
+                      final picked =
+                          await picker.pickImage(
+                        source:
+                            ImageSource.gallery,
+                      );
+
+                      if (picked !=
+                          null) {
+                        setState(() {
+                          file =
+                              File(
+                            picked.path,
+                          );
+                        });
+                      }
+                    },
+                    icon:
+                        const Icon(
+                      Icons.image,
+                    ),
+                    label:
+                        const Text(
+                      'اختيار صورة',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    () =>
+                        Navigator.pop(
+                  context,
+                ),
+                child:
+                    const Text(
+                  'إلغاء',
+                ),
+              ),
+              FilledButton(
+                onPressed:
+                    () async {
+                  bool ok;
+
+                  if (item ==
+                      null) {
+                    ok = await widget
+                        .data
+                        .addCharacter(
+                      name.text,
+                      description.text,
+                      imageFile:
+                          file,
+                    );
+                  } else {
+                    ok = await widget
+                        .data
+                        .updateCharacter(
+                      item['id'],
+                      name.text,
+                      description.text,
+                      imageUrl:
+                          image,
+                      imageFile:
+                          file,
+                    );
+                  }
+
+                  if (context.mounted) {
+                    Navigator.pop(
+                      context,
+                    );
+
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تم الحفظ.'
+                          : 'تعذر الحفظ.',
+                    );
+                  }
+                },
+                child:
+                    const Text(
+                  'حفظ',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'إدارة الشخصيات',
+        ),
+      ),
+      floatingActionButton:
+          FloatingActionButton(
+        onPressed:
+            () => edit(),
+        child:
+            const Icon(
+          Icons.add,
+        ),
+      ),
+      body:
+          ListView.builder(
+        padding:
+            const EdgeInsets.all(12),
+        itemCount:
+            widget.data
+                .ratingCharacters
+                .length,
+        itemBuilder:
+            (_, index) {
+          final item =
+              widget.data
+                  .ratingCharacters[index];
+
+          return Card(
+            child:
+                ListTile(
+              title:
+                  Text(
+                clean(
+                  item['name'],
+                ),
+              ),
+              subtitle:
+                  Text(
+                clean(
+                  item['description'],
+                ),
+              ),
+              trailing:
+                  Row(
+                mainAxisSize:
+                    MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed:
+                        () =>
+                            edit(
+                      item,
+                    ),
+                    icon:
+                        const Icon(
+                      Icons.edit,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed:
+                        () async {
+                      await widget
+                          .data
+                          .deleteCharacter(
+                        item[
+                            'id'],
+                      );
+
+                      setState(
+                        () {},
+                      );
+                    },
+                    icon:
+                        const Icon(
+                      Icons.delete,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// =======================================================
+/// إدارة الأنميات
+/// =======================================================
+
+class ManageAnimePage
+    extends StatefulWidget {
+  final AppData data;
+
+  const ManageAnimePage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<ManageAnimePage> createState() =>
+      _ManageAnimePageState();
+}
+
+class _ManageAnimePageState
+    extends State<ManageAnimePage> {
+  Future<void> edit([
+    Map<String, dynamic>? item,
+  ]) async {
+    final title =
+        TextEditingController(
+      text:
+          clean(item?['title']),
+    );
+
+    final description =
+        TextEditingController(
+      text:
+          clean(
+        item?['description'],
+      ),
+    );
+
+    File? file;
+    String image =
+        clean(
+      item?['image_url'],
+    );
+
+    await showDialog(
+      context: context,
+      builder:
+          (_) => StatefulBuilder(
+        builder:
+            (context, setState) {
+          return AlertDialog(
+            title:
+                Text(
+              item == null
+                  ? 'إضافة أنمي'
+                  : 'تعديل أنمي',
+            ),
+            content:
+                SingleChildScrollView(
+              child:
+                  Column(
+                children: [
+                  TextField(
+                    controller:
+                        title,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'اسم الأنمي',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  TextField(
+                    controller:
+                        description,
+                    maxLines:
+                        3,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'الوصف',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  if (file != null)
+                    Image.file(
+                      file!,
+                      height:
+                          120,
+                    )
+                  else if (image
+                      .isNotEmpty)
+                    Image.network(
+                      image,
+                      height:
+                          120,
+                    ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        () async {
+                      final picker =
+                          ImagePicker();
+
+                      final picked =
+                          await picker.pickImage(
+                        source:
+                            ImageSource.gallery,
+                      );
+
+                      if (picked !=
+                          null) {
+                        setState(() {
+                          file =
+                              File(
+                            picked.path,
+                          );
+                        });
+                      }
+                    },
+                    icon:
+                        const Icon(
+                      Icons.image,
+                    ),
+                    label:
+                        const Text(
+                      'اختيار صورة',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    () =>
+                        Navigator.pop(
+                  context,
+                ),
+                child:
+                    const Text(
+                  'إلغاء',
+                ),
+              ),
+              FilledButton(
+                onPressed:
+                    () async {
+                  bool ok;
+
+                  if (item ==
+                      null) {
+                    ok = await widget
+                        .data
+                        .addAnime(
+                      title.text,
+                      description.text,
+                      imageFile:
+                          file,
+                    );
+                  } else {
+                    ok = await widget
+                        .data
+                        .updateAnime(
+                      item['id'],
+                      title.text,
+                      description.text,
+                      imageUrl:
+                          image,
+                      imageFile:
+                          file,
+                    );
+                  }
+
+                  if (context.mounted) {
+                    Navigator.pop(
+                      context,
+                    );
+
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تم الحفظ.'
+                          : 'تعذر الحفظ.',
+                    );
+                  }
+                },
+                child:
+                    const Text(
+                  'حفظ',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'إدارة الأنميات',
+        ),
+      ),
+      floatingActionButton:
+          FloatingActionButton(
+        onPressed:
+            () => edit(),
+        child:
+            const Icon(
+          Icons.add,
+        ),
+      ),
+      body:
+          ListView.builder(
+        padding:
+            const EdgeInsets.all(12),
+        itemCount:
+            widget.data
+                .ratingAnime
+                .length,
+        itemBuilder:
+            (_, index) {
+          final item =
+              widget.data
+                  .ratingAnime[index];
+
+          return Card(
+            child:
+                ListTile(
+              title:
+                  Text(
+                clean(
+                  item['title'],
+                ),
+              ),
+              subtitle:
+                  Text(
+                clean(
+                  item['description'],
+                ),
+              ),
+              trailing:
+                  Row(
+                mainAxisSize:
+                    MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed:
+                        () =>
+                            edit(
+                      item,
+                    ),
+                    icon:
+                        const Icon(
+                      Icons.edit,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed:
+                        () async {
+                      await widget
+                          .data
+                          .deleteAnime(
+                        item[
+                            'id'],
+                      );
+
+                      setState(
+                        () {},
+                      );
+                    },
+                    icon:
+                        const Icon(
+                      Icons.delete,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// =======================================================
 /// إدارة الأخبار
-/// ===============================
+/// =======================================================
 
 class ManageNewsPage
     extends StatefulWidget {
@@ -4040,256 +8387,231 @@ class ManageNewsPage
 
 class _ManageNewsPageState
     extends State<ManageNewsPage> {
-  final titleController =
+  final title =
       TextEditingController();
 
-  final descriptionController =
+  final description =
       TextEditingController();
 
-  XFile? selectedImage;
+  File? image;
 
-  bool adding = false;
+  Future<void> add() async {
+    title.clear();
+    description.clear();
+    image = null;
 
-  Future<void> pickImage() async {
-    await playClickSound();
+    await showDialog(
+      context: context,
+      builder:
+          (_) => StatefulBuilder(
+        builder:
+            (context, setState) {
+          return AlertDialog(
+            title:
+                const Text(
+              'إضافة خبر',
+            ),
+            content:
+                SingleChildScrollView(
+              child:
+                  Column(
+                children: [
+                  TextField(
+                    controller:
+                        title,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'العنوان',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  TextField(
+                    controller:
+                        description,
+                    maxLines:
+                        5,
+                    decoration:
+                        const InputDecoration(
+                      labelText:
+                          'الوصف',
+                    ),
+                  ),
+                  const SizedBox(
+                    height: 10,
+                  ),
+                  if (image != null)
+                    Image.file(
+                      image!,
+                      height:
+                          120,
+                    ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        () async {
+                      final picker =
+                          ImagePicker();
 
-    final picker =
-        ImagePicker();
+                      final picked =
+                          await picker.pickImage(
+                        source:
+                            ImageSource.gallery,
+                      );
 
-    final image =
-        await picker.pickImage(
-      source:
-          ImageSource.gallery,
-      imageQuality: 85,
+                      if (picked !=
+                          null) {
+                        setState(() {
+                          image =
+                              File(
+                            picked.path,
+                          );
+                        });
+                      }
+                    },
+                    icon:
+                        const Icon(
+                      Icons.image,
+                    ),
+                    label:
+                        const Text(
+                      'إضافة صورة',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    () =>
+                        Navigator.pop(
+                  context,
+                ),
+                child:
+                    const Text(
+                  'إلغاء',
+                ),
+              ),
+              FilledButton(
+                onPressed:
+                    () async {
+                  final ok =
+                      await widget
+                          .data
+                          .addNews(
+                    title.text,
+                    description.text,
+                    imageFile:
+                        image,
+                  );
+
+                  if (context.mounted) {
+                    Navigator.pop(
+                      context,
+                    );
+
+                    showSnack(
+                      context,
+                      ok
+                          ? 'تمت إضافة الخبر.'
+                          : 'تعذر إضافة الخبر.',
+                    );
+                  }
+                },
+                child:
+                    const Text(
+                  'نشر',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
 
-    if (!mounted) return;
-
-    if (image != null) {
-      setState(() {
-        selectedImage = image;
-      });
-    }
-  }
-
-  Future<void> addNews() async {
-    await playClickSound();
-
-    if (titleController.text
-            .trim()
-            .isEmpty ||
-        descriptionController.text
-            .trim()
-            .isEmpty) {
-      showSnack(
-        context,
-        'أكمل جميع الحقول.',
-      );
-      return;
-    }
-
-    setState(() {
-      adding = true;
-    });
-
-    File? imageFile;
-
-    if (selectedImage != null) {
-      imageFile =
-          File(selectedImage!.path);
-    }
-
-    final success =
-        await widget.data.addNews(
-      titleController.text.trim(),
-      descriptionController.text
-          .trim(),
-      imageFile: imageFile,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      adding = false;
-    });
-
-    if (success) {
-      titleController.clear();
-      descriptionController.clear();
-
-      setState(() {
-        selectedImage = null;
-      });
-
-      showSnack(
-        context,
-        'تمت إضافة الخبر بنجاح.',
-      );
-    } else {
-      showSnack(
-        context,
-        'فشل إضافة الخبر.',
-      );
-    }
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('إدارة الأخبار'),
+            const Text(
+          'إدارة الأخبار',
+        ),
       ),
-      body: ListView(
+      floatingActionButton:
+          FloatingActionButton(
+        onPressed:
+            add,
+        child:
+            const Icon(
+          Icons.add,
+        ),
+      ),
+      body:
+          ListView.builder(
         padding:
-            const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller:
-                titleController,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'عنوان الخبر',
-            ),
-          ),
+            const EdgeInsets.all(12),
+        itemCount:
+            widget.data.news.length,
+        itemBuilder:
+            (_, index) {
+          final item =
+              widget.data.news[index];
 
-          const SizedBox(height: 12),
-
-          TextField(
-            controller:
-                descriptionController,
-            maxLines: 4,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'وصف الخبر',
-              alignLabelWithHint:
-                  true,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          OutlinedButton.icon(
-            onPressed:
-                pickImage,
-            icon: const Icon(
-              Icons.photo_library,
-            ),
-            label: Text(
-              selectedImage == null
-                  ? 'اختيار صورة من المعرض'
-                  : 'تغيير الصورة',
-            ),
-          ),
-
-          if (selectedImage != null) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(
-                14,
+          return Card(
+            child:
+                ListTile(
+              title:
+                  Text(
+                clean(
+                  item['title'],
+                ),
               ),
-              child: Image.file(
-                File(
-                  selectedImage!.path,
+              subtitle:
+                  Text(
+                clean(
+                  item['description'],
                 ),
-                height: 190,
-                width:
-                    double.infinity,
-                fit: BoxFit.cover,
+                maxLines:
+                    2,
+                overflow:
+                    TextOverflow.ellipsis,
               ),
-            ),
-          ],
+              trailing:
+                  IconButton(
+                onPressed:
+                    () async {
+                  await widget.data
+                      .deleteNews(
+                    item['id'],
+                  );
 
-          const SizedBox(height: 12),
-
-          FilledButton.icon(
-            onPressed:
-                adding ? null : addNews,
-            icon: const Icon(
-              Icons.add,
-            ),
-            label: Text(
-              adding
-                  ? 'جارٍ إضافة الخبر...'
-                  : 'إضافة خبر',
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          ...widget.data.news.map(
-            (item) => Card(
-              child: ListTile(
-                leading:
-                    (item['image_url'] ??
-                                '')
-                            .toString()
-                            .isNotEmpty
-                        ? ClipRRect(
-                            borderRadius:
-                                BorderRadius
-                                    .circular(
-                              8,
-                            ),
-                            child:
-                                Image.network(
-                              item[
-                                      'image_url']
-                                  .toString(),
-                              width: 55,
-                              height: 55,
-                              fit: BoxFit
-                                  .cover,
-                            ),
-                          )
-                        : const Icon(
-                            Icons
-                                .newspaper,
-                          ),
-                title: Text(
-                  (item['title'] ??
-                          '')
-                      .toString(),
-                ),
-                subtitle: Text(
-                  (item[
-                              'description'] ??
-                          '')
-                      .toString(),
-                  maxLines: 2,
-                  overflow:
-                      TextOverflow.ellipsis,
-                ),
-                trailing:
-                    IconButton(
-                  icon:
-                      const Icon(
-                    Icons.delete,
-                  ),
-                  onPressed: () async {
-                    await playClickSound();
-
-                    await widget.data
-                        .deleteNews(
-                      item['id'],
-                    );
-                  },
+                  setState(
+                    () {},
+                  );
+                },
+                icon:
+                    const Icon(
+                  Icons.delete,
                 ),
               ),
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-/// ===============================
+/// =======================================================
 /// إدارة الإشعارات
-/// ===============================
+/// =======================================================
 
 class ManageNotificationsPage
     extends StatefulWidget {
@@ -4301,182 +8623,113 @@ class ManageNotificationsPage
   });
 
   @override
-  State<ManageNotificationsPage>
-      createState() =>
-          _ManageNotificationsPageState();
+  State<ManageNotificationsPage> createState() =>
+      _ManageNotificationsPageState();
 }
 
 class _ManageNotificationsPageState
-    extends State<
-        ManageNotificationsPage> {
-  final titleController =
+    extends State<ManageNotificationsPage> {
+  final title =
       TextEditingController();
 
-  final bodyController =
+  final body =
       TextEditingController();
 
-  bool sending = false;
-
-  Future<void> sendNotification() async {
-    await playClickSound();
-
-    if (titleController.text
-            .trim()
-            .isEmpty ||
-        bodyController.text
-            .trim()
-            .isEmpty) {
-      showSnack(
-        context,
-        'أكمل جميع الحقول.',
-      );
+  Future<void> add() async {
+    if (title.text
+        .trim()
+        .isEmpty) {
       return;
     }
 
-    setState(() {
-      sending = true;
-    });
-
-    final success =
+    final ok =
         await widget.data
             .addNotification(
-      titleController.text.trim(),
-      bodyController.text.trim(),
+      title.text,
+      body.text,
     );
 
     if (!mounted) return;
 
-    setState(() {
-      sending = false;
-    });
+    showSnack(
+      context,
+      ok
+          ? 'تم إرسال الإشعار.'
+          : 'تعذر إرسال الإشعار.',
+    );
 
-    if (success) {
-      titleController.clear();
-      bodyController.clear();
-
-      showSnack(
-        context,
-        'تم إرسال الإشعار.',
-      );
-    } else {
-      showSnack(
-        context,
-        'فشل إرسال الإشعار.',
-      );
+    if (ok) {
+      title.clear();
+      body.clear();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('إدارة الإشعارات'),
+            const Text(
+          'إدارة الإشعارات',
+        ),
       ),
-      body: ListView(
+      body:
+          Padding(
         padding:
             const EdgeInsets.all(16),
-        children: [
-          const Text(
-            'إرسال إشعار جديد',
-            style: TextStyle(
-              fontSize: 21,
-              fontWeight:
-                  FontWeight.bold,
+        child:
+            Column(
+          children: [
+            TextField(
+              controller:
+                  title,
+              decoration:
+                  const InputDecoration(
+                labelText:
+                    'العنوان',
+              ),
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          TextField(
-            controller:
-                titleController,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'عنوان الإشعار',
-              prefixIcon:
-                  Icon(Icons.title),
+            const SizedBox(
+              height: 10,
             ),
-          ),
-
-          const SizedBox(height: 12),
-
-          TextField(
-            controller:
-                bodyController,
-            maxLines: 5,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'نص الإشعار',
-              alignLabelWithHint:
-                  true,
+            TextField(
+              controller:
+                  body,
+              maxLines:
+                  4,
+              decoration:
+                  const InputDecoration(
+                labelText:
+                    'نص الإشعار',
+              ),
             ),
-          ),
-
-          const SizedBox(height: 14),
-
-          FilledButton.icon(
-            onPressed: sending
-                ? null
-                : sendNotification,
-            icon: const Icon(
-              Icons.send,
+            const SizedBox(
+              height: 15,
             ),
-            label: Text(
-              sending
-                  ? 'جارٍ الإرسال...'
-                  : 'إرسال الإشعار',
-            ),
-          ),
-
-          const SizedBox(height: 25),
-
-          const Text(
-            'الإشعارات السابقة',
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight:
-                  FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          ...widget.data
-              .notifications
-              .map(
-            (item) => Card(
-              child: ListTile(
-                leading:
-                    const CircleAvatar(
-                  child: Icon(
-                    Icons.notifications,
-                  ),
-                ),
-                title: Text(
-                  (item['title'] ??
-                          '')
-                      .toString(),
-                ),
-                subtitle: Text(
-                  (item['body'] ??
-                          '')
-                      .toString(),
+            SizedBox(
+              width:
+                  double.infinity,
+              child:
+                  FilledButton(
+                onPressed:
+                    add,
+                child:
+                    const Text(
+                  'إرسال إشعار',
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-/// ===============================
-/// إدارة الاستطلاعات
-/// ===============================
+/// =======================================================
+/// إدارة الاستطلاع
+/// =======================================================
 
 class ManagePollPage
     extends StatefulWidget {
@@ -4494,69 +8747,30 @@ class ManagePollPage
 
 class _ManagePollPageState
     extends State<ManagePollPage> {
-  final questionController =
+  final question =
       TextEditingController();
 
-  final List<TextEditingController>
-      optionControllers = [
-    TextEditingController(),
-    TextEditingController(),
-  ];
+  final options = List.generate(
+    4,
+    (_) => TextEditingController(),
+  );
 
-  bool creating = false;
-
-  void addOption() {
-    if (optionControllers.length >=
-        6) {
-      showSnack(
-        context,
-        'الحد الأقصى 6 خيارات.',
-      );
-      return;
-    }
-
-    setState(() {
-      optionControllers.add(
-        TextEditingController(),
-      );
-    });
-  }
-
-  void removeOption(int index) {
-    if (optionControllers.length <=
-        2) {
-      return;
-    }
-
-    optionControllers[index]
-        .dispose();
-
-    setState(() {
-      optionControllers.removeAt(
-        index,
-      );
-    });
-  }
-
-  Future<void> createPoll() async {
-    await playClickSound();
-
-    final question =
-        questionController.text.trim();
-
-    final options =
-        optionControllers
+  Future<void> create() async {
+    final values =
+        options
             .map(
-              (controller) =>
-                  controller.text.trim(),
+              (e) =>
+                  e.text.trim(),
             )
             .where(
-              (text) => text.isNotEmpty,
+              (e) => e.isNotEmpty,
             )
             .toList();
 
-    if (question.isEmpty ||
-        options.length < 2) {
+    if (question.text
+            .trim()
+            .isEmpty ||
+        values.length < 2) {
       showSnack(
         context,
         'أدخل السؤال وخيارين على الأقل.',
@@ -4564,228 +8778,107 @@ class _ManagePollPageState
       return;
     }
 
-    setState(() {
-      creating = true;
-    });
-
-    final success =
-        await widget.data.createPoll(
-      question,
-      options,
+    final ok =
+        await widget.data
+            .createPoll(
+      question.text,
+      values,
     );
 
     if (!mounted) return;
 
-    setState(() {
-      creating = false;
-    });
+    showSnack(
+      context,
+      ok
+          ? 'تم إنشاء الاستطلاع.'
+          : 'تعذر إنشاء الاستطلاع.',
+    );
 
-    if (success) {
-      questionController.clear();
+    if (ok) {
+      question.clear();
 
-      for (final controller
-          in optionControllers) {
-        controller.clear();
+      for (final item in options) {
+        item.clear();
       }
 
-      showSnack(
-        context,
-        'تم إنشاء الاستطلاع وتفعيله.',
-      );
-    } else {
-      showSnack(
-        context,
-        'فشل إنشاء الاستطلاع.',
-      );
+      setState(() {});
     }
-  }
-
-  @override
-  void dispose() {
-    questionController
-        .dispose();
-
-    for (final controller
-        in optionControllers) {
-      controller.dispose();
-    }
-
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final active =
-        widget.data.activePoll;
-
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('إدارة الاستطلاعات'),
+            const Text(
+          'إدارة الاستطلاعات',
+        ),
       ),
-      body: ListView(
+      body:
+          ListView(
         padding:
             const EdgeInsets.all(16),
         children: [
-          const Text(
-            'إنشاء استطلاع جديد',
-            style: TextStyle(
-              fontSize: 21,
-              fontWeight:
-                  FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
           TextField(
             controller:
-                questionController,
-            maxLines: 2,
+                question,
             decoration:
                 const InputDecoration(
               labelText:
-                  'سؤال الاستطلاع',
-              hintText:
-                  'مثال: ما أفضل أنمي بالنسبة لك؟',
+                  'السؤال',
             ),
           ),
-
-          const SizedBox(height: 14),
-
-          ...List.generate(
-            optionControllers.length,
-            (index) {
-              return Padding(
-                padding:
-                    const EdgeInsets.only(
-                  bottom: 10,
+          const SizedBox(
+            height: 12,
+          ),
+          for (int i = 0;
+              i < 4;
+              i++)
+            Padding(
+              padding:
+                  const EdgeInsets.only(
+                bottom: 10,
+              ),
+              child:
+                  TextField(
+                controller:
+                    options[i],
+                decoration:
+                    InputDecoration(
+                  labelText:
+                      'الخيار ${i + 1}',
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller:
-                            optionControllers[
-                                index],
-                        decoration:
-                            InputDecoration(
-                          labelText:
-                              'الخيار ${index + 1}',
-                        ),
-                      ),
-                    ),
-                    if (optionControllers
-                            .length >
-                        2)
-                      IconButton(
-                        onPressed: () =>
-                            removeOption(
-                          index,
-                        ),
-                        icon:
-                            const Icon(
-                          Icons
-                              .remove_circle,
-                          color:
-                              Colors.redAccent,
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          OutlinedButton.icon(
-            onPressed: addOption,
-            icon: const Icon(
-              Icons.add,
+              ),
             ),
-            label: const Text(
-              'إضافة خيار',
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          FilledButton.icon(
+          FilledButton(
             onPressed:
-                creating
-                    ? null
-                    : createPoll,
-            icon: const Icon(
-              Icons.poll,
-            ),
-            label: Text(
-              creating
-                  ? 'جارٍ الإنشاء...'
-                  : 'إنشاء الاستطلاع',
+                create,
+            child:
+                const Text(
+              'إنشاء استطلاع',
             ),
           ),
-
-          const SizedBox(height: 30),
-
-          if (active != null)
+          const SizedBox(
+            height: 20,
+          ),
+          if (widget.data.activePoll !=
+              null)
             Card(
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(
-                  16,
-                ),
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                  children: [
+              child:
+                  ListTile(
+                title:
                     const Text(
-                      'الاستطلاع الحالي',
-                      style:
-                          TextStyle(
-                        fontSize: 18,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 10,
-                    ),
+                  'الاستطلاع الحالي',
+                ),
+                subtitle:
                     Text(
-                      (active[
-                                  'question'] ??
-                              '')
-                          .toString(),
-                      style:
-                          const TextStyle(
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    ...widget.data
-                        .activePollOptions
-                        .map(
-                      (option) =>
-                          ListTile(
-                        leading:
-                            const Icon(
-                          Icons
-                              .radio_button_checked,
-                        ),
-                        title: Text(
-                          (option[
-                                      'option_text'] ??
-                                  '')
-                              .toString(),
-                        ),
-                        trailing:
-                            Text(
-                          '${widget.data.pollVoteCounts[option['id']] ?? 0}',
-                        ),
-                      ),
-                    ),
-                  ],
+                  clean(
+                    widget
+                        .data
+                        .activePoll![
+                            'question'],
+                  ),
                 ),
               ),
             ),
@@ -4795,9 +8888,9 @@ class _ManagePollPageState
   }
 }
 
-/// ===============================
-/// إدارة النقاط
-/// ===============================
+/// =======================================================
+/// إدارة اللاعبين
+/// =======================================================
 
 class ManagePointsPage
     extends StatefulWidget {
@@ -4815,267 +8908,276 @@ class ManagePointsPage
 
 class _ManagePointsPageState
     extends State<ManagePointsPage> {
-  final nameController =
-      TextEditingController();
-
-  final pointsController =
-      TextEditingController();
-
-  Future<void> addPlayer() async {
-    await playClickSound();
-
+  Future<void> edit([
+    Map<String, dynamic>? player,
+  ]) async {
     final name =
-        nameController.text.trim();
+        TextEditingController(
+      text:
+          clean(player?['name']),
+    );
 
     final points =
-        int.tryParse(
-      pointsController.text.trim(),
-    );
-
-    if (name.isEmpty ||
-        points == null) {
-      showSnack(
-        context,
-        'أدخل الاسم والنقاط بشكل صحيح.',
-      );
-      return;
-    }
-
-    final success =
-        await widget.data.addPlayer(
-      name,
-      points,
-    );
-
-    if (!mounted) return;
-
-    if (success) {
-      nameController.clear();
-      pointsController.clear();
-
-      showSnack(
-        context,
-        'تمت إضافة اللاعب.',
-      );
-    } else {
-      showSnack(
-        context,
-        'فشل إضافة اللاعب.',
-      );
-    }
-  }
-
-  Future<void> editPlayer(
-    Map<String, dynamic> player,
-  ) async {
-    final nameController =
         TextEditingController(
       text:
-          (player['name'] ?? '')
-              .toString(),
+          toInt(
+        player?['points'],
+      ).toString(),
     );
 
-    final pointsController =
+    final accountId =
         TextEditingController(
       text:
-          (player['points'] ?? 0)
-              .toString(),
+          player?['account_id']
+                  ?.toString() ??
+              '',
     );
 
-    final result =
-        await showDialog<bool>(
+    await showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title:
-              const Text('تعديل النقاط'),
-          content: Column(
-            mainAxisSize:
-                MainAxisSize.min,
+      builder:
+          (_) => AlertDialog(
+        title:
+            Text(
+          player == null
+              ? 'إضافة حساب'
+              : 'تعديل الحساب',
+        ),
+        content:
+            SingleChildScrollView(
+          child:
+              Column(
             children: [
               TextField(
                 controller:
-                    nameController,
+                    name,
                 decoration:
                     const InputDecoration(
-                  labelText: 'الاسم',
+                  labelText:
+                      'اسم المستخدم',
                 ),
               ),
               const SizedBox(
-                height: 12,
+                height: 10,
               ),
               TextField(
                 controller:
-                    pointsController,
+                    accountId,
                 keyboardType:
                     TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter
+                      .digitsOnly,
+                ],
                 decoration:
                     const InputDecoration(
-                  labelText: 'النقاط',
+                  labelText:
+                      'معرف الحساب الفريد',
+                ),
+              ),
+              const SizedBox(
+                height: 10,
+              ),
+              TextField(
+                controller:
+                    points,
+                keyboardType:
+                    TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter
+                      .digitsOnly,
+                ],
+                decoration:
+                    const InputDecoration(
+                  labelText:
+                      'النقاط',
                 ),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  Navigator.pop(
-                context,
-                false,
-              ),
-              child:
-                  const Text('إلغاء'),
+        ),
+        actions: [
+          TextButton(
+            onPressed:
+                () =>
+                    Navigator.pop(
+              context,
             ),
-            FilledButton(
-              onPressed: () async {
-                await playClickSound();
+            child:
+                const Text(
+              'إلغاء',
+            ),
+          ),
+          FilledButton(
+            onPressed:
+                () async {
+              final parsedId =
+                  accountId.text
+                          .trim()
+                          .isEmpty
+                      ? null
+                      : int.tryParse(
+                          accountId.text
+                              .trim(),
+                        );
 
-                final points =
-                    int.tryParse(
-                  pointsController
-                      .text
-                      .trim(),
+              final parsedPoints =
+                  int.tryParse(
+                        points.text
+                            .trim(),
+                      ) ??
+                      0;
+
+              bool ok;
+
+              if (player == null) {
+                ok = await widget
+                    .data
+                    .addPlayer(
+                  name.text,
+                  parsedPoints,
+                  accountId:
+                      parsedId,
                 );
-
-                if (nameController
-                        .text
-                        .trim()
-                        .isEmpty ||
-                    points == null) {
-                  return;
-                }
-
-                final success =
-                    await widget.data
-                        .updatePlayer(
+              } else {
+                ok = await widget
+                    .data
+                    .updatePlayer(
                   player['id'],
-                  nameController.text
-                      .trim(),
-                  points,
+                  name.text,
+                  parsedPoints,
+                  accountId:
+                      parsedId,
+                );
+              }
+
+              if (context.mounted) {
+                Navigator.pop(
+                  context,
                 );
 
-                if (context.mounted) {
-                  Navigator.pop(
-                    context,
-                    success,
-                  );
-                }
-              },
-              child:
-                  const Text('حفظ'),
-            ),
-          ],
-        );
-      },
-    );
-
-    nameController.dispose();
-    pointsController.dispose();
-
-    if (result == true &&
-        mounted) {
-      showSnack(
-        context,
-        'تم تعديل النقاط.',
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('نقاط المسابقة'),
-      ),
-      body: ListView(
-        padding:
-            const EdgeInsets.all(16),
-        children: [
-          TextField(
-            controller:
-                nameController,
-            decoration:
-                const InputDecoration(
-              labelText:
-                  'اسم اللاعب',
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller:
-                pointsController,
-            keyboardType:
-                TextInputType.number,
-            decoration:
-                const InputDecoration(
-              labelText: 'النقاط',
-            ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: addPlayer,
-            icon:
-                const Icon(Icons.add),
-            label:
-                const Text('إضافة'),
-          ),
-          const SizedBox(height: 20),
-          ...widget.data.players.map(
-            (player) => Card(
-              child: ListTile(
-                title: Text(
-                  (player['name'] ??
-                          '')
-                      .toString(),
-                ),
-                subtitle: Text(
-                  '${player['points'] ?? 0} نقطة',
-                ),
-                trailing: Row(
-                  mainAxisSize:
-                      MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon:
-                          const Icon(
-                        Icons.edit,
-                      ),
-                      onPressed: () async {
-                        await playClickSound();
-                        await editPlayer(
-                          player,
-                        );
-                      },
-                    ),
-                    IconButton(
-                      icon:
-                          const Icon(
-                        Icons.delete,
-                      ),
-                      onPressed: () async {
-                        await playClickSound();
-
-                        await widget.data
-                            .deletePlayer(
-                          player['id'],
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
+                showSnack(
+                  context,
+                  ok
+                      ? 'تم حفظ الحساب.'
+                      : 'فشل الحفظ. قد يكون معرف الحساب مستخدماً بالفعل.',
+                );
+              }
+            },
+            child:
+                const Text(
+              'حفظ',
             ),
           ),
         ],
       ),
     );
+
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar:
+          AppBar(
+        title:
+            const Text(
+          'إدارة الحسابات والنقاط',
+        ),
+      ),
+      floatingActionButton:
+          FloatingActionButton(
+        onPressed:
+            () => edit(),
+        child:
+            const Icon(
+          Icons.person_add,
+        ),
+      ),
+      body:
+          ListView.builder(
+        padding:
+            const EdgeInsets.all(12),
+        itemCount:
+            widget.data.players.length,
+        itemBuilder:
+            (_, index) {
+          final player =
+              widget.data.players[
+                  index];
+
+          return Card(
+            child:
+                ListTile(
+              leading:
+                  CircleAvatar(
+                child:
+                    Text(
+                  '${index + 1}',
+                ),
+              ),
+              title:
+                  Text(
+                clean(
+                  player['name'],
+                ),
+              ),
+              subtitle:
+                  Text(
+                'ID: ${player['account_id'] ?? 'غير مرتبط'}\nالمستوى: ${getUserLevel(toInt(player['points']))}',
+              ),
+              trailing:
+                  Row(
+                mainAxisSize:
+                    MainAxisSize.min,
+                children: [
+                  Text(
+                    '${toInt(player['points'])}',
+                  ),
+                  IconButton(
+                    onPressed:
+                        () =>
+                            edit(
+                      player,
+                    ),
+                    icon:
+                        const Icon(
+                      Icons.edit,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed:
+                        () async {
+                      await widget
+                          .data
+                          .deletePlayer(
+                        player[
+                            'id'],
+                      );
+
+                      setState(
+                        () {},
+                      );
+                    },
+                    icon:
+                        const Icon(
+                      Icons.delete,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 
-/// ===============================
+/// =======================================================
 /// إدارة كل جديد
-/// ===============================
+/// =======================================================
 
 class ManageLatestPage
     extends StatefulWidget {
@@ -5093,123 +9195,128 @@ class ManageLatestPage
 
 class _ManageLatestPageState
     extends State<ManageLatestPage> {
-  final titleController =
+  final title =
       TextEditingController();
 
-  final descriptionController =
+  final description =
       TextEditingController();
 
-  Future<void> addLatest() async {
-    await playClickSound();
-
-    if (titleController.text
-            .trim()
-            .isEmpty ||
-        descriptionController.text
-            .trim()
-            .isEmpty) {
-      showSnack(
-        context,
-        'أكمل جميع الحقول.',
-      );
-      return;
-    }
-
-    final success =
-        await widget.data.addLatest(
-      titleController.text.trim(),
-      descriptionController.text
-          .trim(),
+  Future<void> add() async {
+    final ok =
+        await widget.data
+            .addLatest(
+      title.text,
+      description.text,
     );
 
     if (!mounted) return;
 
-    if (success) {
-      titleController.clear();
-      descriptionController.clear();
+    showSnack(
+      context,
+      ok
+          ? 'تمت الإضافة.'
+          : 'تعذر الإضافة.',
+    );
 
-      showSnack(
-        context,
-        'تمت إضافة المنشور.',
-      );
-    } else {
-      showSnack(
-        context,
-        'فشل إضافة المنشور.',
-      );
+    if (ok) {
+      title.clear();
+      description.clear();
+      setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('إدارة كل جديد'),
+            const Text(
+          'إدارة كل جديد',
+        ),
       ),
-      body: ListView(
+      body:
+          ListView(
         padding:
             const EdgeInsets.all(16),
         children: [
           TextField(
             controller:
-                titleController,
+                title,
             decoration:
                 const InputDecoration(
-              labelText: 'العنوان',
+              labelText:
+                  'العنوان',
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(
+            height: 10,
+          ),
           TextField(
             controller:
-                descriptionController,
-            maxLines: 4,
+                description,
+            maxLines:
+                3,
             decoration:
                 const InputDecoration(
-              labelText: 'الوصف',
-              alignLabelWithHint:
-                  true,
+              labelText:
+                  'الوصف',
             ),
           ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: addLatest,
-            icon:
-                const Icon(Icons.add),
-            label:
-                const Text('إضافة منشور'),
+          const SizedBox(
+            height: 12,
           ),
-          const SizedBox(height: 20),
+          FilledButton(
+            onPressed:
+                add,
+            child:
+                const Text(
+              'إضافة',
+            ),
+          ),
+          const SizedBox(
+            height: 15,
+          ),
           ...widget.data.latest.map(
-            (item) => Card(
-              child: ListTile(
-                title: Text(
-                  (item['title'] ??
-                          '')
-                      .toString(),
-                ),
-                subtitle: Text(
-                  (item['description'] ??
-                          '')
-                      .toString(),
-                ),
-                trailing:
-                    IconButton(
-                  icon:
-                      const Icon(
-                    Icons.delete,
+            (item) {
+              return Card(
+                child:
+                    ListTile(
+                  title:
+                      Text(
+                    clean(
+                      item['title'],
+                    ),
                   ),
-                  onPressed: () async {
-                    await playClickSound();
+                  subtitle:
+                      Text(
+                    clean(
+                      item[
+                          'description'],
+                    ),
+                  ),
+                  trailing:
+                      IconButton(
+                    onPressed:
+                        () async {
+                      await widget
+                          .data
+                          .deleteLatest(
+                        item['id'],
+                      );
 
-                    await widget.data
-                        .deleteLatest(
-                      item['id'],
-                    );
-                  },
+                      setState(
+                        () {},
+                      );
+                    },
+                    icon:
+                        const Icon(
+                      Icons.delete,
+                    ),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -5217,12 +9324,12 @@ class _ManageLatestPageState
   }
 }
 
-/// ===============================
+/// =======================================================
 /// إدارة الرسائل
-/// ===============================
+/// =======================================================
 
 class ManageMessagesPage
-    extends StatelessWidget {
+    extends StatefulWidget {
   final AppData data;
 
   const ManageMessagesPage({
@@ -5231,133 +9338,82 @@ class ManageMessagesPage
   });
 
   @override
+  State<ManageMessagesPage> createState() =>
+      _ManageMessagesPageState();
+}
+
+class _ManageMessagesPageState
+    extends State<ManageMessagesPage> {
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('رسائل المستخدمين'),
+            const Text(
+          'رسائل المستخدمين',
+        ),
       ),
-      body: RefreshIndicator(
-        onRefresh:
-            data.loadData,
-        child: ListView(
-          padding:
-              const EdgeInsets.all(16),
-          children: [
-            if (data.messages.isEmpty)
-              const EmptyState(
-                text:
-                    'لا توجد رسائل حالياً.',
-              )
-            else
-              ...data.messages.map(
-                (message) =>
-                    Card(
-                  margin:
-                      const EdgeInsets.only(
-                    bottom: 12,
-                  ),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.all(
-                      14,
-                    ),
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.person,
-                            ),
-                            const SizedBox(
-                              width: 8,
-                            ),
-                            Expanded(
-                              child:
-                                  Text(
-                                (message[
-                                            'name'] ??
-                                        '')
-                                    .toString(),
-                                style:
-                                    const TextStyle(
-                                  fontWeight:
-                                      FontWeight.bold,
-                                  fontSize:
-                                      17,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon:
-                                  const Icon(
-                                Icons.delete,
-                              ),
-                              onPressed:
-                                  () async {
-                                await playClickSound();
+      body:
+          ListView.builder(
+        padding:
+            const EdgeInsets.all(12),
+        itemCount:
+            widget.data.messages.length,
+        itemBuilder:
+            (_, index) {
+          final item =
+              widget.data.messages[
+                  index];
 
-                                await data
-                                    .deleteMessage(
-                                  message[
-                                      'id'],
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(
-                          height: 8,
-                        ),
-                        Text(
-                          (message[
-                                      'message'] ??
-                                  '')
-                              .toString(),
-                          style:
-                              const TextStyle(
-                            color:
-                                Colors.white70,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(
-                          height: 8,
-                        ),
-                        Text(
-                          formatDate(
-                            message[
-                                'created_at'],
-                          ),
-                          style:
-                              const TextStyle(
-                            color:
-                                Colors.white38,
-                            fontSize:
-                                12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+          return Card(
+            child:
+                ListTile(
+              title:
+                  Text(
+                clean(
+                  item['name'],
                 ),
               ),
-          ],
-        ),
+              subtitle:
+                  Text(
+                clean(
+                  item['message'],
+                ),
+              ),
+              trailing:
+                  IconButton(
+                onPressed:
+                    () async {
+                  await widget
+                      .data
+                      .deleteMessage(
+                    item['id'],
+                  );
+
+                  setState(
+                    () {},
+                  );
+                },
+                icon:
+                    const Icon(
+                  Icons.delete,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-/// ===============================
-/// طلبات الشراء
-/// ===============================
+/// =======================================================
+/// إدارة طلبات المتجر
+/// =======================================================
 
 class ManagePurchaseRequestsPage
-    extends StatelessWidget {
+    extends StatefulWidget {
   final AppData data;
 
   const ManagePurchaseRequestsPage({
@@ -5365,289 +9421,156 @@ class ManagePurchaseRequestsPage
     required this.data,
   });
 
-  String itemName(String type) {
-    if (type ==
-        'group_name') {
-      return 'اسم المجموعة';
-    }
+  @override
+  State<ManagePurchaseRequestsPage> createState() =>
+      _ManagePurchaseRequestsPageState();
+}
 
-    return 'أيقونة المجموعة';
-  }
+class _ManagePurchaseRequestsPageState
+    extends State<ManagePurchaseRequestsPage> {
+  Future<void> refresh() async {
+    await widget.data.loadData();
 
-  String statusName(
-    String status,
-  ) {
-    if (status == 'approved') {
-      return 'تمت الموافقة';
-    }
-
-    if (status == 'rejected') {
-      return 'مرفوض';
-    }
-
-    return 'قيد الانتظار';
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar:
+          AppBar(
         title:
-            const Text('طلبات الشراء'),
-      ),
-      body: RefreshIndicator(
-        onRefresh:
-            data.loadData,
-        child: ListView(
-          padding:
-              const EdgeInsets.all(16),
-          children: [
-            if (data.purchaseRequests
-                .isEmpty)
-              const EmptyState(
-                text:
-                    'لا توجد طلبات شراء حالياً.',
-              )
-            else
-              ...data.purchaseRequests
-                  .map(
-                (request) {
-                  Map<String,
-                      dynamic>? player;
-
-                  for (final p
-                      in data.players) {
-                    if (p['id']
-                            .toString() ==
-                        request[
-                                'player_id']
-                            .toString()) {
-                      player = p;
-                      break;
-                    }
-                  }
-
-                  final playerName =
-                      player?['name']
-                              ?.toString() ??
-                          'لاعب غير معروف';
-
-                  final status =
-                      request['status']
-                              ?.toString() ??
-                          'pending';
-
-                  return Card(
-                    margin:
-                        const EdgeInsets
-                            .only(
-                      bottom: 12,
-                    ),
-                    child: Padding(
-                      padding:
-                          const EdgeInsets
-                              .all(14),
-                      child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment
-                                .start,
-                        children: [
-                          Text(
-                            playerName,
-                            style:
-                                const TextStyle(
-                              fontSize: 18,
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(
-                            height: 8,
-                          ),
-                          Text(
-                            'الطلب: ${itemName(request['item_type'].toString())}',
-                          ),
-                          Text(
-                            'التكلفة: ${request['cost']} نقاط',
-                          ),
-                          const SizedBox(
-                            height: 8,
-                          ),
-                          Text(
-                            'الحالة: ${statusName(status)}',
-                            style:
-                                TextStyle(
-                              color: status ==
-                                      'approved'
-                                  ? Colors
-                                      .greenAccent
-                                  : status ==
-                                          'rejected'
-                                      ? Colors
-                                          .redAccent
-                                      : Colors
-                                          .orangeAccent,
-                              fontWeight:
-                                  FontWeight.bold,
-                            ),
-                          ),
-                          if (status ==
-                              'pending') ...[
-                            const SizedBox(
-                              height: 12,
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child:
-                                      FilledButton(
-                                    onPressed:
-                                        () async {
-                                      await playClickSound();
-
-                                      final success =
-                                          await data.approvePurchase(
-                                        request,
-                                      );
-
-                                      if (!context.mounted) {
-                                        return;
-                                      }
-
-                                      showSnack(
-                                        context,
-                                        success
-                                            ? 'تمت الموافقة وخصم النقاط.'
-                                            : 'تعذر الموافقة. تحقق من رصيد اللاعب.',
-                                      );
-                                    },
-                                    child:
-                                        const Text(
-                                      'موافقة',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(
-                                  width: 10,
-                                ),
-                                Expanded(
-                                  child:
-                                      OutlinedButton(
-                                    onPressed:
-                                        () async {
-                                      await playClickSound();
-
-                                      final success =
-                                          await data.rejectPurchase(
-                                        request[
-                                            'id'],
-                                      );
-
-                                      if (!context.mounted) {
-                                        return;
-                                      }
-
-                                      showSnack(
-                                        context,
-                                        success
-                                            ? 'تم رفض الطلب.'
-                                            : 'فشل رفض الطلب.',
-                                      );
-                                    },
-                                    child:
-                                        const Text(
-                                      'رفض',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-          ],
+            const Text(
+          'طلبات المتجر',
         ),
-      ),
-    );
-  }
-}
-
-/// ===============================
-/// Empty State
-/// ===============================
-
-class EmptyState
-    extends StatelessWidget {
-  final String text;
-
-  const EmptyState({
-    super.key,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding:
-          const EdgeInsets.all(30),
-      child: Center(
-        child: Text(
-          text,
-          textAlign:
-              TextAlign.center,
-          style:
-              const TextStyle(
-            color:
-                Colors.white54,
-            fontSize: 15,
+        actions: [
+          IconButton(
+            onPressed:
+                refresh,
+            icon:
+                const Icon(
+              Icons.refresh,
+            ),
           ),
-        ),
+        ],
       ),
+      body:
+          widget.data.purchaseRequests
+                  .isEmpty
+              ? const Center(
+                  child:
+                      Text(
+                    'لا توجد طلبات.',
+                  ),
+                )
+              : ListView.builder(
+                  padding:
+                      const EdgeInsets.all(
+                    12,
+                  ),
+                  itemCount:
+                      widget.data
+                          .purchaseRequests
+                          .length,
+                  itemBuilder:
+                      (_, index) {
+                    final item =
+                        widget
+                            .data
+                            .purchaseRequests[
+                                index];
+
+                    final status =
+                        clean(
+                      item['status'],
+                    );
+
+                    return Card(
+                      child:
+                          Padding(
+                        padding:
+                            const EdgeInsets.all(
+                          12,
+                        ),
+                        child:
+                            Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'اللاعب: ${item['player_id']}',
+                            ),
+                            Text(
+                              'العنصر: ${clean(item['item_type'])}',
+                            ),
+                            Text(
+                              'التكلفة: ${toInt(item['cost'])}',
+                            ),
+                            Text(
+                              'الحالة: $status',
+                            ),
+                            if (status ==
+                                'pending')
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child:
+                                        FilledButton(
+                                      onPressed:
+                                          () async {
+                                        await widget
+                                            .data
+                                            .approvePurchase(
+                                          item,
+                                        );
+
+                                        await refresh();
+                                      },
+                                      child:
+                                          const Text(
+                                        'موافقة',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                    width:
+                                        10,
+                                  ),
+                                  Expanded(
+                                    child:
+                                        OutlinedButton(
+                                      onPressed:
+                                          () async {
+                                        await widget
+                                            .data
+                                            .rejectPurchase(
+                                          item[
+                                              'id'],
+                                        );
+
+                                        await refresh();
+                                      },
+                                      child:
+                                          const Text(
+                                        'رفض',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
 
-/// ===============================
-/// التاريخ
-/// ===============================
-
-String formatDate(dynamic value) {
-  if (value == null) return '';
-
-  try {
-    final date =
-        DateTime.parse(
-      value.toString(),
-    ).toLocal();
-
-    final day =
-        date.day.toString().padLeft(
-              2,
-              '0',
-            );
-
-    final month =
-        date.month.toString().padLeft(
-              2,
-              '0',
-            );
-
-    final year =
-        date.year.toString();
-
-    return '$day/$month/$year';
-  } catch (_) {
-    return '';
-  }
-}
-
-/// ===============================
+/// =======================================================
 /// SnackBar
-/// ===============================
+/// =======================================================
 
 void showSnack(
   BuildContext context,
@@ -5656,7 +9579,10 @@ void showSnack(
   ScaffoldMessenger.of(context)
       .showSnackBar(
     SnackBar(
-      content: Text(message),
+      content:
+          Text(message),
+      behavior:
+          SnackBarBehavior.floating,
     ),
   );
 }
