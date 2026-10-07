@@ -1,3 +1,4 @@
+# ملفات Flutter و Dart
 *.iml
 .dart_tool/
 .idea/
@@ -7,3 +8,19 @@ build/
 *.swp
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# ملفات Android الحرجة — لا ترفعها!
+android/local.properties
+android/.gradle/
+local.properties
+.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+*.jks
+*.keystore
+
+# نظام التشغيل
+.DS_Store
+Thumbs.db
