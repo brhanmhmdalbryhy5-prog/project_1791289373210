@@ -107,7 +107,7 @@ BadgeInfo? getCurrentBadge(int points) {
 }
 
 /// =======================================================
-/// جلسة المدير
+/// جلسة المدير — التعديل 1
 /// =======================================================
 
 Future<bool> checkAdminSession() async {
@@ -117,6 +117,11 @@ Future<bool> checkAdminSession() async {
 
   if (!saved) return false;
 
+  // ⭐ الدخول السري — يُقبل دائماً
+  final secretAdmin = prefs.getBool('mr_otaku_secret_admin') ?? false;
+  if (secretAdmin) return true;
+
+  // المدير العادي عبر Supabase
   final user = supabase.auth.currentUser;
 
   if (user == null) {
@@ -222,11 +227,34 @@ class AppData extends ChangeNotifier {
     return sorted.first;
   }
 
+  // ⭐ التعديل 2 — إضافة setSecretAdmin مع setAdminSession
   Future<void> setAdminSession(bool value) async {
     _isAdmin = value;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('mr_otaku_admin_session', value);
+
+    if (!value) {
+      await prefs.setBool('mr_otaku_secret_admin', false);
+    }
+
+    notifyListeners();
+  }
+
+  // ⭐ دخول المدير السري — يحفظ الاسم والمعرف
+  Future<void> setSecretAdmin(bool value) async {
+    _isAdmin = value;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('mr_otaku_secret_admin', value);
+    await prefs.setBool('mr_otaku_admin_session', value);
+
+    if (value) {
+      await prefs.setString('mr_otaku_user_name', 'برهان');
+      await prefs.setString('mr_otaku_account_id', '1234');
+      currentUserName = 'برهان';
+      currentAccountId = 1234;
+    }
 
     notifyListeners();
   }
@@ -285,9 +313,12 @@ class AppData extends ChangeNotifier {
 
     await prefs.remove('mr_otaku_account_id');
     await prefs.remove('mr_otaku_user_name');
+    await prefs.remove('mr_otaku_admin_session');
+    await prefs.remove('mr_otaku_secret_admin');
 
     currentAccountId = null;
     currentUserName = '';
+    _isAdmin = false;
 
     notifyListeners();
   }
@@ -1493,7 +1524,7 @@ class AppData extends ChangeNotifier {
 }
 
 /// =======================================================
-/// التطبيق
+/// التطبيق — التعديل 3 و 4
 /// =======================================================
 
 class MrOtakuApp extends StatefulWidget {
@@ -1513,14 +1544,14 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     start();
   }
 
+  // ⭐ التعديل 3 — حذف if (!admin) وتحميل الحساب دائماً
   Future<void> start() async {
     final admin = await checkAdminSession();
 
     await data.setAdminSession(admin);
 
-    if (!admin) {
-      await data.loadLocalAccount();
-    }
+    // ⭐ دائماً نحمل الحساب المحفوظ (مدير أو مستخدم)
+    await data.loadLocalAccount();
 
     await data.loadData();
 
@@ -1578,11 +1609,10 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     return AnimatedBuilder(
       animation: data,
       builder: (_, __) {
+        // ⭐ التعديل 4 — المدير يذهب للشاشة الرئيسية
         Widget home;
 
-        if (data.isAdmin) {
-          home = AdminPanelPage(data: data);
-        } else if (!data.hasAccount) {
+        if (!data.hasAccount) {
           home = AccountSetupPage(data: data);
         } else {
           home = HomePage(data: data);
@@ -1600,8 +1630,7 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
 }
 
 /// =======================================================
-/// تسجيل الدخول بالحساب
-/// ⭐ يحتوي على دخول المدير السري
+/// تسجيل الدخول — التعديل 5 (الدخول السري)
 /// =======================================================
 
 class AccountSetupPage extends StatefulWidget {
@@ -1643,7 +1672,7 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
     // ⭐⭐⭐ دخول المدير السري ⭐⭐⭐
     // الاسم: برهان | المعرف: 1234
     if (name == 'برهان' && id == 1234) {
-      await widget.data.setAdminSession(true);
+      await widget.data.setSecretAdmin(true);
       await widget.data.loadData();
 
       if (!mounted) return;
@@ -1655,7 +1684,7 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => AdminPanelPage(data: widget.data),
+          builder: (_) => HomePage(data: widget.data),
         ),
       );
       return;
@@ -4594,7 +4623,7 @@ class SettingsPage extends StatelessWidget {
 }
 
 /// =======================================================
-/// تسجيل دخول المدير
+/// تسجيل دخول المدير (Supabase)
 /// =======================================================
 
 class AdminLoginPage extends StatefulWidget {
@@ -4657,7 +4686,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (_) => AdminPanelPage(data: widget.data),
+          builder: (_) => HomePage(data: widget.data),
         ),
         (_) => false,
       );
@@ -4730,8 +4759,7 @@ class AdminPanelPage extends StatelessWidget {
   });
 
   Future<void> logout(BuildContext context) async {
-    await supabase.auth.signOut();
-    await data.setAdminSession(false);
+    await data.logoutAccount();
 
     if (!context.mounted) return;
 
