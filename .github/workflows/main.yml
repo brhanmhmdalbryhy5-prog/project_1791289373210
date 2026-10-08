@@ -1,22 +1,48 @@
-name: mr_otaku
-description: تطبيق مستر أوتاكو - مجتمع ومسابقات الأنمي
-publish_to: 'none'
+name: Build APK
 
-version: 1.2.0+3
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
-environment:
-  sdk: '>=2.17.0 <4.0.0'
+permissions:
+  contents: write
 
-dependencies:
-  flutter:
-    sdk: flutter
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-  supabase_flutter: ^2.8.4
-  shared_preferences: ^2.2.3
-  image_picker: ^1.0.0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-dependency_overrides:
-  app_links: 6.3.0
+      - name: Remove local.properties if exists
+        run: rm -f android/local.properties
 
-flutter:
-  uses-material-design: true
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
