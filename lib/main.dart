@@ -1745,7 +1745,7 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      تسجيل الدخول v2,
+                      'تسجيل الدخول v2',
                       style: TextStyle(fontSize: 17),
                     ),
                     const SizedBox(height: 25),
