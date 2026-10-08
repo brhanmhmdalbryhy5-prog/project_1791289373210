@@ -15,5 +15,8 @@ dependencies:
   shared_preferences: ^2.2.3
   image_picker: ^1.0.0
 
+dependency_overrides:
+  app_links: 6.3.0
+
 flutter:
   uses-material-design: true
