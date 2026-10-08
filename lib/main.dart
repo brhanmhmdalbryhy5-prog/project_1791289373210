@@ -1553,11 +1553,11 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
           borderRadius: BorderRadius.circular(14),
         ),
       ),
-      cardTheme: const CardThemeData(
-        color: Color(0xFF241010),
+      cardTheme: CardTheme(
+        color: const Color(0xFF241010),
         elevation: 2,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(18)),
+          borderRadius: BorderRadius.circular(18),
         ),
       ),
     );
