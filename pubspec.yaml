@@ -17,6 +17,7 @@ dependencies:
 
 dependency_overrides:
   app_links: 6.3.0
+  flutter_plugin_android_lifecycle: 2.0.20
 
 flutter:
   uses-material-design: true
