@@ -1999,22 +1999,14 @@ Future<void> login() async {
     loading = false;
   });
 
-  // ⭐ انتقل للصفحة المناسبة
-  if (isAdmin) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AdminPanelPage(data: widget.data),
-      ),
-    );
-  } else {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomePage(data: widget.data),
-      ),
-    );
-  }
+  // ⭐ الكل يذهب لـ HomePage (حتى المدير)
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => HomePage(data: widget.data),
+    ),
+  );
+}
 
   @override
   void dispose() {
