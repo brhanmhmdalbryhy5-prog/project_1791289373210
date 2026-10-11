@@ -1955,40 +1955,59 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
 
   bool loading = false;
 
-  Future<void> login() async {
-    final name = nameController.text.trim();
-    final id = int.tryParse(idController.text.trim());
+Future<void> login() async {
+  final name = nameController.text.trim();
+  final id = int.tryParse(idController.text.trim());
 
-    if (name.isEmpty || id == null || id <= 0) {
-      showSnack(
-        context,
-        'أدخل اسم المستخدم ومعرف الحساب بشكل صحيح.',
-      );
-      return;
-    }
+  if (name.isEmpty || id == null || id <= 0) {
+    showSnack(
+      context,
+      'أدخل اسم المستخدم ومعرف الحساب بشكل صحيح.',
+    );
+    return;
+  }
 
-    setState(() {
-      loading = true;
-    });
+  setState(() {
+    loading = true;
+  });
 
-    await playClickSound();
+  await playClickSound();
 
-    final success = await widget.data.loginAccount(name, id);
+  final success = await widget.data.loginAccount(name, id);
 
-    if (!mounted) return;
+  if (!mounted) return;
 
+  if (!success) {
     setState(() {
       loading = false;
     });
+    showSnack(
+      context,
+      'المعرف غير موجود أو الاسم لا يطابق الحساب.',
+    );
+    return;
+  }
 
-    if (!success) {
-      showSnack(
-        context,
-        'المعرف غير موجود أو الاسم لا يطابق الحساب.',
-      );
-      return;
-    }
+  // ⭐ تحقق هل الحساب مدير
+  final isAdmin = await checkAdminSession();
 
+  await widget.data.setAdminSession(isAdmin);
+
+  if (!mounted) return;
+
+  setState(() {
+    loading = false;
+  });
+
+  // ⭐ انتقل للصفحة المناسبة
+  if (isAdmin) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminPanelPage(data: widget.data),
+      ),
+    );
+  } else {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
