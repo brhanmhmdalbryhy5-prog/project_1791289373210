@@ -26,12 +26,18 @@ Future<void> main() async {
 
   await LocalCache.init();
 
-  await NotificationService.init();
-  await NotificationService.registerBackgroundTask();
-
   runApp(const MrOtakuApp());
-}
 
+  // ⭐ تجهيز الإشعارات في الخلفية بعد ظهور التطبيق
+  Future.delayed(const Duration(seconds: 2), () async {
+    try {
+      await NotificationService.init();
+      await NotificationService.registerBackgroundTask();
+    } catch (e) {
+      debugPrint('Notification setup error: $e');
+    }
+  });
+}
 // =======================================================
 // أدوات عامة
 // =======================================================
