@@ -18,8 +18,7 @@ Future<void> main() async {
 
   await Supabase.initialize(
     url: 'https://sekchgllbimoedsjoumi.supabase.co',
-    anonKey:
-        'sb_publishable_EZLVSUviR39RXi6OP3OqfQ_3j7vMZcU',
+    anonKey: 'sb_publishable_EZLVSUviR39RXi6OP3OqfQ_3j7vMZcU',
   );
 
   supabase = Supabase.instance.client;
@@ -28,7 +27,6 @@ Future<void> main() async {
 
   runApp(const MrOtakuApp());
 
-  // ⭐ تجهيز الإشعارات في الخلفية بعد ظهور التطبيق
   Future.delayed(const Duration(seconds: 2), () async {
     try {
       await NotificationService.init();
@@ -38,6 +36,7 @@ Future<void> main() async {
     }
   });
 }
+
 // =======================================================
 // أدوات عامة
 // =======================================================
@@ -110,13 +109,11 @@ const List<BadgeInfo> otakuBadges = [
 
 BadgeInfo? getCurrentBadge(int points) {
   BadgeInfo? current;
-
   for (final badge in otakuBadges) {
     if (points >= badge.points) {
       current = badge;
     }
   }
-
   return current;
 }
 
@@ -141,14 +138,13 @@ Future<bool> checkAdminSession() async {
 
     if (player == null) return false;
 
-    final isAdmin = player['is_admin'] == true;
-
-    return isAdmin;
+    return player['is_admin'] == true;
   } catch (e) {
     debugPrint('Admin session error: $e');
     return false;
   }
 }
+
 // =======================================================
 // AppData
 // =======================================================
@@ -166,7 +162,6 @@ class AppData extends ChangeNotifier {
   List<Map<String, dynamic>> ratingAnime = [];
   List<Map<String, dynamic>> publicChat = [];
 
-  // ميزة جديدة: الخبر المهم
   String importantNews = '';
   String importantNewsUpdatedAt = '';
 
@@ -187,7 +182,6 @@ class AppData extends ChangeNotifier {
   int? currentAccountId;
   String currentUserName = '';
 
-  // لتتبع المحتوى الجديد (علامة 🔴)
   String _lastSeenNewsId = '';
   int _lastSeenQuizCount = 0;
   int _lastSeenCharacterCount = 0;
@@ -206,25 +200,21 @@ class AppData extends ChangeNotifier {
     }).length;
   }
 
-  // هل توجد أخبار جديدة لم تُشاهد؟
   bool get hasNewNews {
     if (news.isEmpty) return false;
     return clean(news.first['id']) != _lastSeenNewsId;
   }
 
-  // هل توجد أسئلة جديدة؟
   bool get hasNewQuiz {
     return quizQuestions.length > _lastSeenQuizCount &&
         _lastSeenQuizCount >= 0;
   }
 
-  // هل توجد تقييمات جديدة؟
   bool get hasNewRatings {
     return ratingCharacters.length > _lastSeenCharacterCount ||
         ratingAnime.length > _lastSeenAnimeCount;
   }
 
-  // هل الخبر المهم جديد (لم يُشاهد)؟
   bool get hasNewImportantNews {
     if (importantNews.isEmpty) return false;
     final lastSeen = LocalCache.loadString('last_seen_important_news');
@@ -253,7 +243,6 @@ class AppData extends ChangeNotifier {
     if (players.isEmpty) return null;
 
     final sorted = [...players];
-
     sorted.sort(
       (a, b) => toInt(b['points']).compareTo(toInt(a['points'])),
     );
@@ -270,7 +259,6 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  // تعليم الأخبار كمقروءة
   Future<void> markNewsSeen() async {
     if (news.isNotEmpty) {
       _lastSeenNewsId = clean(news.first['id']);
@@ -279,14 +267,12 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  // تعليم الأسئلة كمقروءة
   Future<void> markQuizSeen() async {
     _lastSeenQuizCount = quizQuestions.length;
     await LocalCache.saveInt('last_seen_quiz_count', _lastSeenQuizCount);
     notifyListeners();
   }
 
-  // تعليم التقييمات كمقروءة
   Future<void> markRatingsSeen() async {
     _lastSeenCharacterCount = ratingCharacters.length;
     _lastSeenAnimeCount = ratingAnime.length;
@@ -301,7 +287,6 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  // تعليم الخبر المهم كمقروء
   Future<void> markImportantNewsSeen() async {
     await LocalCache.saveString(
       'last_seen_important_news',
@@ -379,7 +364,6 @@ class AppData extends ChangeNotifier {
   }
   // ===================== تحميل البيانات =====================
 
-  // تحميل سريع من الكاش المحلي (يعمل بدون إنترنت)
   Future<void> loadFromCache() async {
     final cachedNews = LocalCache.loadList('news');
     final cachedPlayers = LocalCache.loadList('players');
@@ -409,7 +393,6 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  // حفظ كل البيانات في الكاش
   Future<void> _saveAllToCache() async {
     await LocalCache.saveList('news', news);
     await LocalCache.saveList('players', players);
@@ -575,7 +558,6 @@ class AppData extends ChangeNotifier {
 
       for (final item in result) {
         final id = item['news_id'];
-
         likeCounts[id] = (likeCounts[id] ?? 0) + 1;
 
         if (clean(item['client_id']) == clientId) {
@@ -691,12 +673,9 @@ class AppData extends ChangeNotifier {
   Future<void> loadNotifications() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      final saved =
-          prefs.getStringList('mr_otaku_read_notifications');
+      final saved = prefs.getStringList('mr_otaku_read_notifications');
 
       _readNotifications.clear();
-
       if (saved != null) {
         _readNotifications.addAll(saved);
       }
@@ -782,7 +761,6 @@ class AppData extends ChangeNotifier {
       }
 
       activePoll = Map<String, dynamic>.from(polls.first);
-
       final pollId = activePoll!['id'];
 
       final options = await supabase
@@ -805,7 +783,6 @@ class AppData extends ChangeNotifier {
 
       for (final vote in votes) {
         final optionId = vote['option_id'];
-
         pollVoteCounts[optionId] =
             (pollVoteCounts[optionId] ?? 0) + 1;
 
@@ -1270,7 +1247,6 @@ class AppData extends ChangeNotifier {
       if (player == null) return false;
 
       final points = toInt(player['points']);
-
       if (points < cost) return false;
 
       await supabase
@@ -1656,7 +1632,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  // ===================== الدردشة (مع الصور) =====================
+  // ===================== الدردشة =====================
 
   Future<void> loadPublicChat() async {
     try {
@@ -1849,13 +1825,10 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     start();
   }
 
-Future<void> start() async {
+  Future<void> start() async {
     await data.loadLocalAccount();
-
     final admin = await checkAdminSession();
-
     await data.setAdminSession(admin);
-
     await data.loadData();
 
     if (!mounted) return;
@@ -1914,9 +1887,7 @@ Future<void> start() async {
       builder: (_, __) {
         Widget home;
 
-        if (data.isAdmin) {
-          home = AdminPanelPage(data: data);
-        } else if (!data.hasAccount) {
+        if (!data.hasAccount) {
           home = AccountSetupPage(data: data);
         } else {
           home = HomePage(data: data);
@@ -1955,58 +1926,55 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
 
   bool loading = false;
 
-Future<void> login() async {
-  final name = nameController.text.trim();
-  final id = int.tryParse(idController.text.trim());
+  Future<void> login() async {
+    final name = nameController.text.trim();
+    final id = int.tryParse(idController.text.trim());
 
-  if (name.isEmpty || id == null || id <= 0) {
-    showSnack(
-      context,
-      'أدخل اسم المستخدم ومعرف الحساب بشكل صحيح.',
-    );
-    return;
-  }
+    if (name.isEmpty || id == null || id <= 0) {
+      showSnack(
+        context,
+        'أدخل اسم المستخدم ومعرف الحساب بشكل صحيح.',
+      );
+      return;
+    }
 
-  setState(() {
-    loading = true;
-  });
+    setState(() {
+      loading = true;
+    });
 
-  await playClickSound();
+    await playClickSound();
 
-  final success = await widget.data.loginAccount(name, id);
+    final success = await widget.data.loginAccount(name, id);
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  if (!success) {
+    if (!success) {
+      setState(() {
+        loading = false;
+      });
+      showSnack(
+        context,
+        'المعرف غير موجود أو الاسم لا يطابق الحساب.',
+      );
+      return;
+    }
+
+    final isAdmin = await checkAdminSession();
+    await widget.data.setAdminSession(isAdmin);
+
+    if (!mounted) return;
+
     setState(() {
       loading = false;
     });
-    showSnack(
+
+    Navigator.pushReplacement(
       context,
-      'المعرف غير موجود أو الاسم لا يطابق الحساب.',
+      MaterialPageRoute(
+        builder: (_) => HomePage(data: widget.data),
+      ),
     );
-    return;
   }
-
-  // ⭐ تحقق هل الحساب مدير
-  final isAdmin = await checkAdminSession();
-
-  await widget.data.setAdminSession(isAdmin);
-
-  if (!mounted) return;
-
-  setState(() {
-    loading = false;
-  });
-
-  // ⭐ الكل يذهب لـ HomePage (حتى المدير)
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(
-      builder: (_) => HomePage(data: widget.data),
-    ),
-  );
-}
 
   @override
   void dispose() {
@@ -2129,7 +2097,6 @@ class _HomePageState extends State<HomePage> {
         selectedIndex: index,
         onDestinationSelected: (value) async {
           await playClickSound();
-
           if (!mounted) return;
 
           setState(() {
@@ -2280,7 +2247,6 @@ class _HomeTabState extends State<HomeTab> {
           IconButton(
             onPressed: () async {
               await playClickSound();
-
               if (!mounted) return;
 
               Navigator.push(
@@ -2523,7 +2489,6 @@ class _NewsCarousel extends StatelessWidget {
           return GestureDetector(
             onTap: () async {
               await playClickSound();
-
               if (!context.mounted) return;
 
               Navigator.push(
@@ -2845,7 +2810,6 @@ class NewsCard extends StatelessWidget {
                     IconButton(
                       onPressed: () async {
                         await playClickSound();
-
                         if (!context.mounted) return;
 
                         Navigator.push(
@@ -2904,7 +2868,6 @@ class _CommentsPageState extends State<CommentsPage> {
 
   Future<void> load() async {
     final result = await widget.data.getComments(widget.newsId);
-
     if (!mounted) return;
 
     setState(() {
@@ -2964,12 +2927,9 @@ class _CommentsPageState extends State<CommentsPage> {
                               leading: const CircleAvatar(
                                 child: Icon(Icons.person),
                               ),
-                              title: Text(
-                                clean(item['user_name']),
-                              ),
-                              subtitle: Text(
-                                clean(item['comment_text']),
-                              ),
+                              title: Text(clean(item['user_name'])),
+                              subtitle:
+                                  Text(clean(item['comment_text'])),
                             ),
                           );
                         },
@@ -3062,7 +3022,6 @@ class NotificationsPage extends StatelessWidget {
     );
   }
 }
-
 // =======================================================
 // الخدمات
 // =======================================================
@@ -3255,7 +3214,6 @@ class QuestionsHubPage extends StatelessWidget {
   Future<void> open(BuildContext context, String type) async {
     await playClickSound();
     await data.loadQuizQuestions();
-
     if (!context.mounted) return;
 
     Navigator.push(
@@ -3733,14 +3691,37 @@ class CharacterRatingsList extends StatefulWidget {
 
 class _CharacterRatingsListState extends State<CharacterRatingsList> {
   Map<dynamic, double> averages = {};
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    widget.data.addListener(_onDataChanged);
+    _maybeLoad();
+  }
+
+  void _onDataChanged() {
+    _maybeLoad();
+  }
+
+  void _maybeLoad() {
+    if (!mounted) return;
+    if (widget.data.ratingCharacters.isEmpty) return;
+    if (averages.isNotEmpty) return;
+    if (_loading) return;
     load();
   }
 
+  @override
+  void dispose() {
+    widget.data.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
   Future<void> load() async {
+    if (_loading) return;
+    _loading = true;
+
     final map = <dynamic, double>{};
 
     for (final item in widget.data.ratingCharacters) {
@@ -3748,10 +3729,14 @@ class _CharacterRatingsListState extends State<CharacterRatingsList> {
           await widget.data.characterAverage(item['id']);
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      _loading = false;
+      return;
+    }
 
     setState(() {
       averages = map;
+      _loading = false;
     });
   }
 
@@ -3821,14 +3806,37 @@ class AnimeRatingsList extends StatefulWidget {
 
 class _AnimeRatingsListState extends State<AnimeRatingsList> {
   Map<dynamic, double> averages = {};
+  bool _loading = false;
 
   @override
   void initState() {
     super.initState();
+    widget.data.addListener(_onDataChanged);
+    _maybeLoad();
+  }
+
+  void _onDataChanged() {
+    _maybeLoad();
+  }
+
+  void _maybeLoad() {
+    if (!mounted) return;
+    if (widget.data.ratingAnime.isEmpty) return;
+    if (averages.isNotEmpty) return;
+    if (_loading) return;
     load();
   }
 
+  @override
+  void dispose() {
+    widget.data.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
   Future<void> load() async {
+    if (_loading) return;
+    _loading = true;
+
     final map = <dynamic, double>{};
 
     for (final item in widget.data.ratingAnime) {
@@ -3836,10 +3844,14 @@ class _AnimeRatingsListState extends State<AnimeRatingsList> {
           await widget.data.animeAverage(item['id']);
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      _loading = false;
+      return;
+    }
 
     setState(() {
       averages = map;
+      _loading = false;
     });
   }
 
@@ -4216,8 +4228,9 @@ class FavoritesList extends StatelessWidget {
     );
   }
 }
+
 // =======================================================
-// الدردشة العامة (مع الصور)
+// الدردشة العامة
 // =======================================================
 
 class PublicChatPage extends StatefulWidget {
@@ -4501,7 +4514,6 @@ class _JumpGamePageState extends State<JumpGamePage> {
 
   Future<void> loadBest() async {
     final prefs = await SharedPreferences.getInstance();
-
     if (!mounted) return;
 
     setState(() {
@@ -5095,130 +5107,6 @@ class SettingsPage extends StatelessWidget {
 }
 
 // =======================================================
-// تسجيل دخول المدير
-// =======================================================
-
-class AdminLoginPage extends StatefulWidget {
-  final AppData data;
-
-  const AdminLoginPage({
-    super.key,
-    required this.data,
-  });
-
-  @override
-  State<AdminLoginPage> createState() => _AdminLoginPageState();
-}
-
-class _AdminLoginPageState extends State<AdminLoginPage> {
-  final email = TextEditingController();
-  final password = TextEditingController();
-  bool loading = false;
-
-  @override
-  void dispose() {
-    email.dispose();
-    password.dispose();
-    super.dispose();
-  }
-
-  Future<void> login() async {
-    if (email.text.trim().isEmpty || password.text.isEmpty) return;
-
-    setState(() {
-      loading = true;
-    });
-
-    try {
-      final result = await supabase.auth.signInWithPassword(
-        email: email.text.trim(),
-        password: password.text,
-      );
-
-      final user = result.user;
-
-      if (user == null) throw Exception();
-
-      final admin = await supabase
-          .from('admins')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      if (admin == null) {
-        await supabase.auth.signOut();
-        throw Exception('not_admin');
-      }
-
-      await widget.data.setAdminSession(true);
-      await widget.data.loadData();
-
-      if (!mounted) return;
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AdminPanelPage(data: widget.data),
-        ),
-        (_) => false,
-      );
-    } catch (e) {
-      if (mounted) {
-        showSnack(
-          context,
-          'بيانات الدخول غير صحيحة أو الحساب ليس مديراً.',
-        );
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        loading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('دخول الإدارة')),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            TextField(
-              controller: email,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'البريد الإلكتروني',
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: password,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'كلمة المرور',
-              ),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: loading ? null : login,
-                child: loading
-                    ? const CircularProgressIndicator()
-                    : const Text('دخول'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// =======================================================
 // لوحة الإدارة
 // =======================================================
 
@@ -5231,7 +5119,6 @@ class AdminPanelPage extends StatelessWidget {
   });
 
   Future<void> logout(BuildContext context) async {
-    await supabase.auth.signOut();
     await data.setAdminSession(false);
 
     if (!context.mounted) return;
@@ -5250,18 +5137,8 @@ class AdminPanelPage extends StatelessWidget {
     if (!data.isAdmin) {
       return Scaffold(
         appBar: AppBar(title: const Text('الإدارة')),
-        body: Center(
-          child: FilledButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => AdminLoginPage(data: data),
-                ),
-              );
-            },
-            child: const Text('دخول الإدارة'),
-          ),
+        body: const Center(
+          child: Text('ليس لديك صلاحية الوصول.'),
         ),
       );
     }
@@ -5396,18 +5273,6 @@ class AdminPanelPage extends StatelessWidget {
                 context,
                 MaterialPageRoute(
                   builder: (_) => ManageMessagesPage(data: data),
-                ),
-              );
-            },
-          ),
-          AdminTile(
-            icon: Icons.chat,
-            title: 'الدردشة العامة',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PublicChatPage(data: data),
                 ),
               );
             },
@@ -5624,7 +5489,6 @@ class _ManageQuizPageState extends State<ManageQuizPage> {
               builder: (_) => QuizEditorPage(data: widget.data),
             ),
           );
-
           if (!mounted) return;
           setState(() {});
         },
@@ -5662,7 +5526,6 @@ class _ManageQuizPageState extends State<ManageQuizPage> {
                                 ),
                               ),
                             );
-
                             if (!mounted) return;
                             setState(() {});
                           },
@@ -5729,7 +5592,6 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
     option4 = TextEditingController(text: clean(q?['option4']));
 
     correct = toInt(q?['correct_option']);
-
     if (correct < 1 || correct > 4) {
       correct = 1;
     }
@@ -5739,7 +5601,6 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
         : clean(q?['quiz_type']);
 
     imageUrl = clean(q?['image_url']);
-
     if (imageUrl?.isEmpty ?? true) {
       imageUrl = null;
     }
@@ -5757,7 +5618,6 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
 
   Future<void> pickImage() async {
     final picker = ImagePicker();
-
     final picked = await picker.pickImage(
       source: ImageSource.gallery,
     );
@@ -5794,16 +5654,11 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
 
       if (finalImage == null || finalImage.isEmpty) {
         if (!mounted) return;
-
-        showSnack(
-          context,
-          'أضف صورة لهذا النوع من الأسئلة.',
-        );
+        showSnack(context, 'أضف صورة لهذا النوع من الأسئلة.');
 
         setState(() {
           saving = false;
         });
-
         return;
       }
     } else {
@@ -5964,7 +5819,7 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
 }
 
 // =======================================================
-// إدارة الشخصيات
+// إدارة الشخصيات والأنميات
 // =======================================================
 
 class ManageCharactersPage extends StatefulWidget {
@@ -6079,7 +5934,6 @@ class _ManageCharactersPageState extends State<ManageCharactersPage> {
 
     name.dispose();
     description.dispose();
-
     if (mounted) setState(() {});
   }
 
@@ -6126,10 +5980,6 @@ class _ManageCharactersPageState extends State<ManageCharactersPage> {
     );
   }
 }
-
-// =======================================================
-// إدارة الأنميات
-// =======================================================
 
 class ManageAnimePage extends StatefulWidget {
   final AppData data;
@@ -6242,7 +6092,6 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
 
     title.dispose();
     description.dispose();
-
     if (mounted) setState(() {});
   }
 
@@ -6290,7 +6139,7 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
 }
 
 // =======================================================
-// إدارة الأخبار
+// إدارة الأخبار والإشعارات
 // =======================================================
 
 class ManageNewsPage extends StatefulWidget {
@@ -6437,10 +6286,6 @@ class _ManageNewsPageState extends State<ManageNewsPage> {
   }
 }
 
-// =======================================================
-// إدارة الإشعارات
-// =======================================================
-
 class ManageNotificationsPage extends StatefulWidget {
   final AppData data;
 
@@ -6525,7 +6370,7 @@ class _ManageNotificationsPageState
 }
 
 // =======================================================
-// إدارة الاستطلاع
+// إدارة الاستطلاع واللاعبين وكل جديد
 // =======================================================
 
 class ManagePollPage extends StatefulWidget {
@@ -6631,10 +6476,6 @@ class _ManagePollPageState extends State<ManagePollPage> {
     );
   }
 }
-
-// =======================================================
-// إدارة اللاعبين
-// =======================================================
 
 class ManagePointsPage extends StatefulWidget {
   final AppData data;
@@ -6746,7 +6587,6 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
     name.dispose();
     points.dispose();
     accountId.dispose();
-
     if (mounted) setState(() {});
   }
 
@@ -6796,10 +6636,6 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
     );
   }
 }
-
-// =======================================================
-// إدارة كل جديد
-// =======================================================
 
 class ManageLatestPage extends StatefulWidget {
   final AppData data;
@@ -6891,7 +6727,7 @@ class _ManageLatestPageState extends State<ManageLatestPage> {
 }
 
 // =======================================================
-// إدارة الرسائل
+// إدارة الرسائل وطلبات المتجر
 // =======================================================
 
 class ManageMessagesPage extends StatefulWidget {
@@ -6937,10 +6773,6 @@ class _ManageMessagesPageState extends State<ManageMessagesPage> {
     );
   }
 }
-
-// =======================================================
-// إدارة طلبات المتجر
-// =======================================================
 
 class ManagePurchaseRequestsPage extends StatefulWidget {
   final AppData data;
@@ -7159,8 +6991,7 @@ void callbackDispatcher() {
       } catch (_) {
         await Supabase.initialize(
           url: 'https://sekchgllbimoedsjoumi.supabase.co',
-          anonKey:
-              'sb_publishable_EZLVSUviR39RXi6OP3OqfQ_3j7vMZcU'
+          anonKey: 'sb_publishable_EZLVSUviR39RXi6OP3OqfQ_3j7vMZcU',
         );
       }
     } catch (_) {}
@@ -7170,4 +7001,4 @@ void callbackDispatcher() {
 
     return true;
   });
-}
+}  
