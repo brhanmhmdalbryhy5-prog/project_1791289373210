@@ -126,39 +126,29 @@ BadgeInfo? getCurrentBadge(int points) {
 
 Future<bool> checkAdminSession() async {
   final prefs = await SharedPreferences.getInstance();
+  final savedAccountId = prefs.getString('mr_otaku_account_id');
 
-  final saved = prefs.getBool('mr_otaku_admin_session') ?? false;
-
-  if (!saved) return false;
-
-  final user = supabase.auth.currentUser;
-
-  if (user == null) {
-    await prefs.setBool('mr_otaku_admin_session', false);
+  if (savedAccountId == null || savedAccountId.isEmpty) {
     return false;
   }
 
   try {
-    final admin = await supabase
-        .from('admins')
-        .select('user_id')
-        .eq('user_id', user.id)
+    final player = await supabase
+        .from('players')
+        .select()
+        .eq('account_id', int.tryParse(savedAccountId) ?? -1)
         .maybeSingle();
 
-    final result = admin != null;
+    if (player == null) return false;
 
-    if (!result) {
-      await prefs.setBool('mr_otaku_admin_session', false);
-      await supabase.auth.signOut();
-    }
+    final isAdmin = player['is_admin'] == true;
 
-    return result;
+    return isAdmin;
   } catch (e) {
     debugPrint('Admin session error: $e');
     return false;
   }
 }
-
 // =======================================================
 // AppData
 // =======================================================
@@ -1859,14 +1849,12 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     start();
   }
 
-  Future<void> start() async {
+Future<void> start() async {
+    await data.loadLocalAccount();
+
     final admin = await checkAdminSession();
 
     await data.setAdminSession(admin);
-
-    if (!admin) {
-      await data.loadLocalAccount();
-    }
 
     await data.loadData();
 
