@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -7,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:workmanager/workmanager.dart';
 
 late final SupabaseClient supabase;
 
@@ -16,17 +19,22 @@ Future<void> main() async {
   await Supabase.initialize(
     url: 'https://sekchgllbimoedsjoumi.supabase.co',
     anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNla2NoZ2xsYmltb2Vkc2pvdW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExNzQ3NzcsImV4cCI6MjEwNjc1MDc3N30.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNla2NoZ2xsYmltb2Vkc2pvdW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI3NTk5MDAsImV4cCI6MjA0ODMzNTkwMH0.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
   );
 
   supabase = Supabase.instance.client;
 
+  await LocalCache.init();
+
+  await NotificationService.init();
+  await NotificationService.registerBackgroundTask();
+
   runApp(const MrOtakuApp());
 }
 
-/// =======================================================
-/// أدوات عامة
-/// =======================================================
+// =======================================================
+// أدوات عامة
+// =======================================================
 
 Future<void> playClickSound() async {
   try {
@@ -67,9 +75,9 @@ String quizTypeName(String type) {
   }
 }
 
-/// =======================================================
-/// الشارات
-/// =======================================================
+// =======================================================
+// الشارات
+// =======================================================
 
 class BadgeInfo {
   final int points;
@@ -106,9 +114,9 @@ BadgeInfo? getCurrentBadge(int points) {
   return current;
 }
 
-/// =======================================================
-/// جلسة المدير — التعديل 1
-/// =======================================================
+// =======================================================
+// جلسة المدير
+// =======================================================
 
 Future<bool> checkAdminSession() async {
   final prefs = await SharedPreferences.getInstance();
@@ -117,11 +125,6 @@ Future<bool> checkAdminSession() async {
 
   if (!saved) return false;
 
-  // ⭐ الدخول السري — يُقبل دائماً
-  final secretAdmin = prefs.getBool('mr_otaku_secret_admin') ?? false;
-  if (secretAdmin) return true;
-
-  // المدير العادي عبر Supabase
   final user = supabase.auth.currentUser;
 
   if (user == null) {
@@ -150,9 +153,9 @@ Future<bool> checkAdminSession() async {
   }
 }
 
-/// =======================================================
-/// AppData
-/// =======================================================
+// =======================================================
+// AppData
+// =======================================================
 
 class AppData extends ChangeNotifier {
   List<Map<String, dynamic>> news = [];
@@ -166,6 +169,10 @@ class AppData extends ChangeNotifier {
   List<Map<String, dynamic>> ratingCharacters = [];
   List<Map<String, dynamic>> ratingAnime = [];
   List<Map<String, dynamic>> publicChat = [];
+
+  // ميزة جديدة: الخبر المهم
+  String importantNews = '';
+  String importantNewsUpdatedAt = '';
 
   final Map<dynamic, int> likeCounts = {};
   final Set<String> likedNews = {};
@@ -184,6 +191,12 @@ class AppData extends ChangeNotifier {
   int? currentAccountId;
   String currentUserName = '';
 
+  // لتتبع المحتوى الجديد (علامة 🔴)
+  String _lastSeenNewsId = '';
+  int _lastSeenQuizCount = 0;
+  int _lastSeenCharacterCount = 0;
+  int _lastSeenAnimeCount = 0;
+
   bool get isAdmin => _isAdmin;
 
   bool get hasAccount =>
@@ -195,6 +208,31 @@ class AppData extends ChangeNotifier {
     return notifications.where((n) {
       return !_readNotifications.contains(n['id'].toString());
     }).length;
+  }
+
+  // هل توجد أخبار جديدة لم تُشاهد؟
+  bool get hasNewNews {
+    if (news.isEmpty) return false;
+    return clean(news.first['id']) != _lastSeenNewsId;
+  }
+
+  // هل توجد أسئلة جديدة؟
+  bool get hasNewQuiz {
+    return quizQuestions.length > _lastSeenQuizCount &&
+        _lastSeenQuizCount >= 0;
+  }
+
+  // هل توجد تقييمات جديدة؟
+  bool get hasNewRatings {
+    return ratingCharacters.length > _lastSeenCharacterCount ||
+        ratingAnime.length > _lastSeenAnimeCount;
+  }
+
+  // هل الخبر المهم جديد (لم يُشاهد)؟
+  bool get hasNewImportantNews {
+    if (importantNews.isEmpty) return false;
+    final lastSeen = LocalCache.loadString('last_seen_important_news');
+    return importantNewsUpdatedAt != lastSeen;
   }
 
   Map<String, dynamic>? get currentPlayer {
@@ -227,39 +265,56 @@ class AppData extends ChangeNotifier {
     return sorted.first;
   }
 
-  // ⭐ التعديل 2 — إضافة setSecretAdmin مع setAdminSession
   Future<void> setAdminSession(bool value) async {
     _isAdmin = value;
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('mr_otaku_admin_session', value);
 
-    if (!value) {
-      await prefs.setBool('mr_otaku_secret_admin', false);
-    }
-
     notifyListeners();
   }
 
-  // ⭐ دخول المدير السري — يحفظ الاسم والمعرف
-  Future<void> setSecretAdmin(bool value) async {
-    _isAdmin = value;
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('mr_otaku_secret_admin', value);
-    await prefs.setBool('mr_otaku_admin_session', value);
-
-    if (value) {
-      await prefs.setString('mr_otaku_user_name', 'برهان');
-      await prefs.setString('mr_otaku_account_id', '1234');
-      currentUserName = 'برهان';
-      currentAccountId = 1234;
+  // تعليم الأخبار كمقروءة
+  Future<void> markNewsSeen() async {
+    if (news.isNotEmpty) {
+      _lastSeenNewsId = clean(news.first['id']);
+      await LocalCache.saveString('last_seen_news_id', _lastSeenNewsId);
+      notifyListeners();
     }
+  }
 
+  // تعليم الأسئلة كمقروءة
+  Future<void> markQuizSeen() async {
+    _lastSeenQuizCount = quizQuestions.length;
+    await LocalCache.saveInt('last_seen_quiz_count', _lastSeenQuizCount);
     notifyListeners();
   }
 
-  /// ===================== الحساب =====================
+  // تعليم التقييمات كمقروءة
+  Future<void> markRatingsSeen() async {
+    _lastSeenCharacterCount = ratingCharacters.length;
+    _lastSeenAnimeCount = ratingAnime.length;
+    await LocalCache.saveInt(
+      'last_seen_character_count',
+      _lastSeenCharacterCount,
+    );
+    await LocalCache.saveInt(
+      'last_seen_anime_count',
+      _lastSeenAnimeCount,
+    );
+    notifyListeners();
+  }
+
+  // تعليم الخبر المهم كمقروء
+  Future<void> markImportantNewsSeen() async {
+    await LocalCache.saveString(
+      'last_seen_important_news',
+      importantNewsUpdatedAt,
+    );
+    notifyListeners();
+  }
+
+  // ===================== الحساب =====================
 
   Future<void> loadLocalAccount() async {
     final prefs = await SharedPreferences.getInstance();
@@ -269,6 +324,13 @@ class AppData extends ChangeNotifier {
 
     currentAccountId = int.tryParse(id ?? '');
     currentUserName = name?.trim() ?? '';
+
+    _lastSeenNewsId = LocalCache.loadString('last_seen_news_id') ?? '';
+    _lastSeenQuizCount = LocalCache.loadInt('last_seen_quiz_count') ?? 0;
+    _lastSeenCharacterCount =
+        LocalCache.loadInt('last_seen_character_count') ?? 0;
+    _lastSeenAnimeCount =
+        LocalCache.loadInt('last_seen_anime_count') ?? 0;
   }
 
   Future<bool> loginAccount(String name, int accountId) async {
@@ -313,19 +375,68 @@ class AppData extends ChangeNotifier {
 
     await prefs.remove('mr_otaku_account_id');
     await prefs.remove('mr_otaku_user_name');
-    await prefs.remove('mr_otaku_admin_session');
-    await prefs.remove('mr_otaku_secret_admin');
 
     currentAccountId = null;
     currentUserName = '';
-    _isAdmin = false;
+
+    notifyListeners();
+  }
+  // ===================== تحميل البيانات =====================
+
+  // تحميل سريع من الكاش المحلي (يعمل بدون إنترنت)
+  Future<void> loadFromCache() async {
+    final cachedNews = LocalCache.loadList('news');
+    final cachedPlayers = LocalCache.loadList('players');
+    final cachedLatest = LocalCache.loadList('latest');
+    final cachedNotifs = LocalCache.loadList('notifications');
+    final cachedQuiz = LocalCache.loadList('quiz_questions');
+    final cachedChars = LocalCache.loadList('rating_characters');
+    final cachedAnime = LocalCache.loadList('rating_anime');
+    final cachedChat = LocalCache.loadList('public_chat');
+
+    if (cachedNews.isNotEmpty) news = cachedNews;
+    if (cachedPlayers.isNotEmpty) players = cachedPlayers;
+    if (cachedLatest.isNotEmpty) latest = cachedLatest;
+    if (cachedNotifs.isNotEmpty) notifications = cachedNotifs;
+    if (cachedQuiz.isNotEmpty) quizQuestions = cachedQuiz;
+    if (cachedChars.isNotEmpty) ratingCharacters = cachedChars;
+    if (cachedAnime.isNotEmpty) ratingAnime = cachedAnime;
+    if (cachedChat.isNotEmpty) publicChat = cachedChat;
+
+    final cachedPoll = LocalCache.loadMap('active_poll');
+    if (cachedPoll != null) activePoll = cachedPoll;
+
+    importantNews = LocalCache.loadString('important_news') ?? '';
+    importantNewsUpdatedAt =
+        LocalCache.loadString('important_news_updated_at') ?? '';
 
     notifyListeners();
   }
 
-  /// ===================== تحميل البيانات =====================
+  // حفظ كل البيانات في الكاش
+  Future<void> _saveAllToCache() async {
+    await LocalCache.saveList('news', news);
+    await LocalCache.saveList('players', players);
+    await LocalCache.saveList('latest', latest);
+    await LocalCache.saveList('notifications', notifications);
+    await LocalCache.saveList('quiz_questions', quizQuestions);
+    await LocalCache.saveList('rating_characters', ratingCharacters);
+    await LocalCache.saveList('rating_anime', ratingAnime);
+    await LocalCache.saveList('public_chat', publicChat);
+    await LocalCache.saveMap('active_poll', activePoll);
+
+    await LocalCache.saveString('important_news', importantNews);
+    await LocalCache.saveString(
+      'important_news_updated_at',
+      importantNewsUpdatedAt,
+    );
+  }
 
   Future<void> loadData() async {
+    if (news.isEmpty) {
+      await loadFromCache();
+    }
+
     loading = true;
     notifyListeners();
 
@@ -348,6 +459,7 @@ class AppData extends ChangeNotifier {
       await loadRatingCharacters();
       await loadRatingAnime();
       await loadPublicChat();
+      await loadImportantNews();
 
       if (_isAdmin) {
         final messagesData = await supabase
@@ -368,6 +480,8 @@ class AppData extends ChangeNotifier {
         messages = [];
         purchaseRequests = [];
       }
+
+      await _saveAllToCache();
     } catch (e) {
       debugPrint('Load data error: $e');
     }
@@ -376,7 +490,66 @@ class AppData extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// ===================== Client ID =====================
+  // ===================== الخبر المهم =====================
+
+  Future<void> loadImportantNews() async {
+    try {
+      final result = await supabase
+          .from('important_news')
+          .select()
+          .order('updated_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+
+      if (result == null) {
+        importantNews = '';
+        importantNewsUpdatedAt = '';
+      } else {
+        importantNews = clean(result['content']);
+        importantNewsUpdatedAt = clean(result['updated_at']);
+      }
+    } catch (e) {
+      debugPrint('Load important news error: $e');
+    }
+  }
+
+  Future<bool> updateImportantNews(String content) async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase.from('important_news').delete().gte('id', 0);
+
+      await supabase.from('important_news').insert({
+        'content': content.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      await loadImportantNews();
+      await _saveAllToCache();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('Update important news error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> clearImportantNews() async {
+    if (!_isAdmin) return false;
+
+    try {
+      await supabase.from('important_news').delete().gte('id', 0);
+      importantNews = '';
+      importantNewsUpdatedAt = '';
+      await _saveAllToCache();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ===================== Client ID =====================
 
   Future<String> getClientId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -391,7 +564,7 @@ class AppData extends ChangeNotifier {
     return id;
   }
 
-  /// ===================== الإعجابات =====================
+  // ===================== الإعجابات =====================
 
   Future<void> loadLikes() async {
     try {
@@ -450,7 +623,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== التعليقات =====================
+  // ===================== التعليقات =====================
 
   Future<void> loadCommentCounts() async {
     try {
@@ -517,7 +690,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الإشعارات =====================
+  // ===================== الإشعارات =====================
 
   Future<void> loadNotifications() async {
     try {
@@ -541,6 +714,10 @@ class AppData extends ChangeNotifier {
     } catch (e) {
       debugPrint('Notifications error: $e');
     }
+  }
+
+  bool isNotificationRead(dynamic id) {
+    return _readNotifications.contains(id.toString());
   }
 
   Future<void> markNotificationRead(dynamic id) async {
@@ -581,6 +758,7 @@ class AppData extends ChangeNotifier {
       });
 
       await loadNotifications();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -589,7 +767,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الاستطلاع =====================
+  // ===================== الاستطلاع =====================
 
   Future<void> loadPoll() async {
     try {
@@ -720,7 +898,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الأسئلة =====================
+  // ===================== الأسئلة =====================
 
   Future<void> loadQuizQuestions() async {
     try {
@@ -770,6 +948,7 @@ class AppData extends ChangeNotifier {
       });
 
       await loadQuizQuestions();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -807,6 +986,7 @@ class AppData extends ChangeNotifier {
           .eq('id', id);
 
       await loadQuizQuestions();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -825,6 +1005,7 @@ class AppData extends ChangeNotifier {
           .eq('id', id);
 
       await loadQuizQuestions();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -853,7 +1034,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الأخبار =====================
+  // ===================== الأخبار =====================
 
   Future<bool> addNews(
     String title,
@@ -907,7 +1088,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== اللاعبين =====================
+  // ===================== اللاعبين =====================
 
   Future<bool> addPlayer(
     String name,
@@ -993,7 +1174,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== كل جديد =====================
+  // ===================== كل جديد =====================
 
   Future<bool> addLatest(String title, String description) async {
     if (!_isAdmin || title.trim().isEmpty) return false;
@@ -1023,7 +1204,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الرسائل =====================
+  // ===================== الرسائل =====================
 
   Future<bool> sendMessage(String name, String message) async {
     if (message.trim().isEmpty) return false;
@@ -1056,7 +1237,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== المشتريات =====================
+  // ===================== المشتريات =====================
 
   Future<bool> createPurchaseRequest(
     dynamic playerId,
@@ -1129,7 +1310,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الشخصيات =====================
+  // ===================== الشخصيات =====================
 
   Future<void> loadRatingCharacters() async {
     try {
@@ -1165,6 +1346,7 @@ class AppData extends ChangeNotifier {
       });
 
       await loadRatingCharacters();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1198,6 +1380,7 @@ class AppData extends ChangeNotifier {
           .eq('id', id);
 
       await loadRatingCharacters();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1215,6 +1398,7 @@ class AppData extends ChangeNotifier {
           .eq('id', id);
 
       await loadRatingCharacters();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1222,7 +1406,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الأنميات =====================
+  // ===================== الأنميات =====================
 
   Future<void> loadRatingAnime() async {
     try {
@@ -1258,6 +1442,7 @@ class AppData extends ChangeNotifier {
       });
 
       await loadRatingAnime();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1291,6 +1476,7 @@ class AppData extends ChangeNotifier {
           .eq('id', id);
 
       await loadRatingAnime();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1304,6 +1490,7 @@ class AppData extends ChangeNotifier {
     try {
       await supabase.from('rating_anime').delete().eq('id', id);
       await loadRatingAnime();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1332,7 +1519,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== التقييمات =====================
+  // ===================== التقييمات =====================
 
   Future<double> characterAverage(dynamic characterId) async {
     try {
@@ -1422,7 +1609,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== المفضلة =====================
+  // ===================== المفضلة =====================
 
   Future<bool> toggleFavorite(String type, dynamic id) async {
     if (currentAccountId == null) return false;
@@ -1473,7 +1660,7 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  /// ===================== الدردشة =====================
+  // ===================== الدردشة (مع الصور) =====================
 
   Future<void> loadPublicChat() async {
     try {
@@ -1489,22 +1676,34 @@ class AppData extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendPublicChat(String message) async {
-    if (message.trim().isEmpty) return false;
+  Future<bool> sendPublicChat(
+    String message, {
+    File? imageFile,
+  }) async {
+    if (message.trim().isEmpty && imageFile == null) return false;
 
     try {
+      String? imageUrl;
+
+      if (imageFile != null) {
+        imageUrl = await uploadGeneralImage(imageFile, 'chat');
+      }
+
       await supabase.from('public_chat').insert({
         'account_id': currentAccountId,
         'user_name': currentUserName.trim().isEmpty
             ? 'مستخدم'
             : currentUserName.trim(),
         'message': message.trim(),
+        'image_url': imageUrl,
       });
 
       await loadPublicChat();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
+      debugPrint('Send chat error: $e');
       return false;
     }
   }
@@ -1515,6 +1714,7 @@ class AppData extends ChangeNotifier {
     try {
       await supabase.from('public_chat').delete().eq('id', id);
       await loadPublicChat();
+      await _saveAllToCache();
       notifyListeners();
       return true;
     } catch (e) {
@@ -1522,10 +1722,119 @@ class AppData extends ChangeNotifier {
     }
   }
 }
+// =======================================================
+// مدير التخزين المحلي
+// =======================================================
+class LocalCache {
+  static const String _prefix = 'mr_otaku_cache_';
+  static SharedPreferences? _prefs;
 
-/// =======================================================
-/// التطبيق — التعديل 3 و 4
-/// =======================================================
+  static Future<void> init() async {
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  static Future<void> saveList(
+    String key,
+    List<Map<String, dynamic>> data,
+  ) async {
+    await init();
+    try {
+      await _prefs!.setString('$_prefix$key', jsonEncode(data));
+    } catch (_) {}
+  }
+
+  static List<Map<String, dynamic>> loadList(String key) {
+    final raw = _prefs?.getString('$_prefix$key');
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> saveMap(String key, Map<String, dynamic>? data) async {
+    await init();
+    try {
+      if (data == null) {
+        await _prefs!.remove('$_prefix$key');
+      } else {
+        await _prefs!.setString('$_prefix$key', jsonEncode(data));
+      }
+    } catch (_) {}
+  }
+
+  static Map<String, dynamic>? loadMap(String key) {
+    final raw = _prefs?.getString('$_prefix$key');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveString(String key, String? value) async {
+    await init();
+    try {
+      if (value == null) {
+        await _prefs!.remove('$_prefix$key');
+      } else {
+        await _prefs!.setString('$_prefix$key', value);
+      }
+    } catch (_) {}
+  }
+
+  static String? loadString(String key) =>
+      _prefs?.getString('$_prefix$key');
+
+  static Future<void> saveInt(String key, int? value) async {
+    await init();
+    try {
+      if (value == null) {
+        await _prefs!.remove('$_prefix$key');
+      } else {
+        await _prefs!.setInt('$_prefix$key', value);
+      }
+    } catch (_) {}
+  }
+
+  static int? loadInt(String key) => _prefs?.getInt('$_prefix$key');
+
+  static Future<void> saveBool(String key, bool value) async {
+    await init();
+    try {
+      await _prefs!.setBool('$_prefix$key', value);
+    } catch (_) {}
+  }
+
+  static bool loadBool(String key, {bool defaultValue = false}) =>
+      _prefs?.getBool('$_prefix$key') ?? defaultValue;
+
+  static Future<void> remove(String key) async {
+    await init();
+    try {
+      await _prefs!.remove('$_prefix$key');
+    } catch (_) {}
+  }
+
+  static Future<void> clearAll() async {
+    await init();
+    try {
+      final keys =
+          _prefs!.getKeys().where((k) => k.startsWith(_prefix)).toList();
+      for (final k in keys) {
+        await _prefs!.remove(k);
+      }
+    } catch (_) {}
+  }
+}
+
+// =======================================================
+// التطبيق
+// =======================================================
 
 class MrOtakuApp extends StatefulWidget {
   const MrOtakuApp({super.key});
@@ -1544,14 +1853,14 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     start();
   }
 
-  // ⭐ التعديل 3 — حذف if (!admin) وتحميل الحساب دائماً
   Future<void> start() async {
     final admin = await checkAdminSession();
 
     await data.setAdminSession(admin);
 
-    // ⭐ دائماً نحمل الحساب المحفوظ (مدير أو مستخدم)
-    await data.loadLocalAccount();
+    if (!admin) {
+      await data.loadLocalAccount();
+    }
 
     await data.loadData();
 
@@ -1587,8 +1896,8 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
       cardTheme: CardTheme(
         color: const Color(0xFF241010),
         elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
         ),
       ),
     );
@@ -1609,10 +1918,11 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
     return AnimatedBuilder(
       animation: data,
       builder: (_, __) {
-        // ⭐ التعديل 4 — المدير يذهب للشاشة الرئيسية
         Widget home;
 
-        if (!data.hasAccount) {
+        if (data.isAdmin) {
+          home = AdminPanelPage(data: data);
+        } else if (!data.hasAccount) {
           home = AccountSetupPage(data: data);
         } else {
           home = HomePage(data: data);
@@ -1629,9 +1939,9 @@ class _MrOtakuAppState extends State<MrOtakuApp> {
   }
 }
 
-/// =======================================================
-/// تسجيل الدخول — التعديل 5 (الدخول السري)
-/// =======================================================
+// =======================================================
+// تسجيل الدخول بالحساب
+// =======================================================
 
 class AccountSetupPage extends StatefulWidget {
   final AppData data;
@@ -1668,28 +1978,6 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
     });
 
     await playClickSound();
-
-    // ⭐⭐⭐ دخول المدير السري ⭐⭐⭐
-    // الاسم: برهان | المعرف: 1234
-    if (name == 'برهان' && id == 1234) {
-      await widget.data.setSecretAdmin(true);
-      await widget.data.loadData();
-
-      if (!mounted) return;
-
-      setState(() {
-        loading = false;
-      });
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => HomePage(data: widget.data),
-        ),
-      );
-      return;
-    }
-    // ⭐⭐⭐ نهاية الدخول السري ⭐⭐⭐
 
     final success = await widget.data.loginAccount(name, id);
 
@@ -1802,9 +2090,9 @@ class _AccountSetupPageState extends State<AccountSetupPage> {
   }
 }
 
-/// =======================================================
-/// الرئيسية
-/// =======================================================
+// =======================================================
+// الرئيسية
+// =======================================================
 
 class HomePage extends StatefulWidget {
   final AppData data;
@@ -1842,26 +2130,64 @@ class _HomePageState extends State<HomePage> {
           setState(() {
             index = value;
           });
+
+          if (value == 0) {
+            await widget.data.markImportantNewsSeen();
+          } else if (value == 1) {
+            await widget.data.markNewsSeen();
+          } else if (value == 2) {
+            await widget.data.markQuizSeen();
+            await widget.data.markRatingsSeen();
+          } else if (value == 3) {
+            await widget.data.markAllNotificationsRead();
+          }
         },
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: widget.data.hasNewImportantNews,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.home_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: widget.data.hasNewImportantNews,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.home),
+            ),
             label: 'الرئيسية',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.newspaper_outlined),
-            selectedIcon: Icon(Icons.newspaper),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: widget.data.hasNewNews,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.newspaper_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: widget.data.hasNewNews,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.newspaper),
+            ),
             label: 'الأخبار',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.apps_outlined),
-            selectedIcon: Icon(Icons.apps),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: widget.data.hasNewQuiz ||
+                  widget.data.hasNewRatings,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.apps_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: widget.data.hasNewQuiz ||
+                  widget.data.hasNewRatings,
+              backgroundColor: Colors.red,
+              child: const Icon(Icons.apps),
+            ),
             label: 'الخدمات',
           ),
           NavigationDestination(
             icon: Badge(
               isLabelVisible: widget.data.unreadNotificationCount > 0,
+              backgroundColor: Colors.red,
               label: Text(
                 widget.data.unreadNotificationCount.toString(),
               ),
@@ -1876,9 +2202,9 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/// =======================================================
-/// الصفحة الرئيسية
-/// =======================================================
+// =======================================================
+// الصفحة الرئيسية
+// =======================================================
 
 class HomeTab extends StatefulWidget {
   final AppData data;
@@ -1961,6 +2287,7 @@ class _HomeTabState extends State<HomeTab> {
             },
             icon: Badge(
               isLabelVisible: widget.data.unreadNotificationCount > 0,
+              backgroundColor: Colors.red,
               label: Text(
                 widget.data.unreadNotificationCount.toString(),
               ),
@@ -1974,6 +2301,51 @@ class _HomeTabState extends State<HomeTab> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (widget.data.importantNews.trim().isNotEmpty)
+              Card(
+                color: const Color(0xFF8B0000),
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.campaign,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'إعلان مهم',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              widget.data.importantNews,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (widget.data.importantNews.trim().isNotEmpty)
+              const SizedBox(height: 16),
+
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -2119,9 +2491,9 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// شريط الأخبار
-/// =======================================================
+// =======================================================
+// شريط الأخبار
+// =======================================================
 
 class _NewsCarousel extends StatelessWidget {
   final AppData data;
@@ -2227,9 +2599,9 @@ class _NewsCarousel extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// تفاصيل الخبر
-/// =======================================================
+// =======================================================
+// تفاصيل الخبر
+// =======================================================
 
 class NewsDetailsPage extends StatelessWidget {
   final AppData data;
@@ -2286,9 +2658,9 @@ class NewsDetailsPage extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// استطلاع
-/// =======================================================
+// =======================================================
+// استطلاع
+// =======================================================
 
 class PollCard extends StatelessWidget {
   final AppData data;
@@ -2359,9 +2731,9 @@ class PollCard extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// الأخبار
-/// =======================================================
+// =======================================================
+// الأخبار
+// =======================================================
 
 class NewsPage extends StatelessWidget {
   final AppData data;
@@ -2495,9 +2867,9 @@ class NewsCard extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// التعليقات
-/// =======================================================
+// =======================================================
+// التعليقات
+// =======================================================
 
 class CommentsPage extends StatefulWidget {
   final AppData data;
@@ -2623,9 +2995,9 @@ class _CommentsPageState extends State<CommentsPage> {
   }
 }
 
-/// =======================================================
-/// الإشعارات
-/// =======================================================
+// =======================================================
+// الإشعارات
+// =======================================================
 
 class NotificationsPage extends StatelessWidget {
   final AppData data;
@@ -2659,8 +3031,7 @@ class NotificationsPage extends StatelessWidget {
               itemBuilder: (_, index) {
                 final item = data.notifications[index];
                 final id = item['id'];
-                final read = data._readNotifications
-                    .contains(id.toString());
+                final read = data.isNotificationRead(id);
 
                 return Card(
                   child: ListTile(
@@ -2687,9 +3058,9 @@ class NotificationsPage extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// الخدمات
-/// =======================================================
+// =======================================================
+// الخدمات
+// =======================================================
 
 class ServicesPage extends StatelessWidget {
   final AppData data;
@@ -2864,9 +3235,9 @@ class ServiceTile extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// مركز الأسئلة
-/// =======================================================
+// =======================================================
+// مركز الأسئلة
+// =======================================================
 
 class QuestionsHubPage extends StatelessWidget {
   final AppData data;
@@ -2956,9 +3327,9 @@ class _QuestionTypeCard extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// لعبة الأسئلة
-/// =======================================================
+// =======================================================
+// لعبة الأسئلة
+// =======================================================
 
 class QuizPage extends StatefulWidget {
   final AppData data;
@@ -3181,9 +3552,9 @@ class _QuizPageState extends State<QuizPage> {
   }
 }
 
-/// =======================================================
-/// نتيجة الأسئلة
-/// =======================================================
+// =======================================================
+// نتيجة الأسئلة
+// =======================================================
 
 class QuizResultPage extends StatelessWidget {
   final AppData data;
@@ -3286,9 +3657,9 @@ class QuizResultPage extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// التقييمات
-/// =======================================================
+// =======================================================
+// التقييمات
+// =======================================================
 
 class RatingsPage extends StatefulWidget {
   final AppData data;
@@ -3682,9 +4053,9 @@ Future<void> showRatingDialog(
   );
 }
 
-/// =======================================================
-/// المفضلة
-/// =======================================================
+// =======================================================
+// المفضلة
+// =======================================================
 
 class FavoritesPage extends StatefulWidget {
   final AppData data;
@@ -3840,10 +4211,9 @@ class FavoritesList extends StatelessWidget {
     );
   }
 }
-
-/// =======================================================
-/// الدردشة العامة
-/// =======================================================
+// =======================================================
+// الدردشة العامة (مع الصور)
+// =======================================================
 
 class PublicChatPage extends StatefulWidget {
   final AppData data;
@@ -3860,6 +4230,8 @@ class PublicChatPage extends StatefulWidget {
 class _PublicChatPageState extends State<PublicChatPage> {
   final controller = TextEditingController();
   Timer? timer;
+  File? selectedImage;
+  bool sending = false;
 
   @override
   void initState() {
@@ -3881,17 +4253,46 @@ class _PublicChatPageState extends State<PublicChatPage> {
     super.dispose();
   }
 
+  Future<void> pickImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
+    );
+
+    if (picked == null) return;
+    if (!mounted) return;
+
+    setState(() {
+      selectedImage = File(picked.path);
+    });
+  }
+
   Future<void> send() async {
-    if (controller.text.trim().isEmpty) return;
+    if (controller.text.trim().isEmpty && selectedImage == null) return;
+
+    setState(() {
+      sending = true;
+    });
 
     await playClickSound();
 
-    final ok = await widget.data.sendPublicChat(controller.text);
+    final ok = await widget.data.sendPublicChat(
+      controller.text,
+      imageFile: selectedImage,
+    );
 
     if (!mounted) return;
 
+    setState(() {
+      sending = false;
+    });
+
     if (ok) {
       controller.clear();
+      setState(() {
+        selectedImage = null;
+      });
     } else {
       showSnack(context, 'تعذر إرسال الرسالة.');
     }
@@ -3928,6 +4329,9 @@ class _PublicChatPageState extends State<PublicChatPage> {
                       final mine = clean(item['account_id']) ==
                           clean(widget.data.currentAccountId);
 
+                      final messageImage = clean(item['image_url']);
+                      final messageText = clean(item['message']);
+
                       return Align(
                         alignment: mine
                             ? Alignment.centerRight
@@ -3946,7 +4350,34 @@ class _PublicChatPageState extends State<PublicChatPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                Text(clean(item['message'])),
+                                if (messageImage.isNotEmpty)
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.only(bottom: 6),
+                                    child: ClipRRect(
+                                      borderRadius:
+                                          BorderRadius.circular(12),
+                                      child: Image.network(
+                                        messageImage,
+                                        width: 200,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) {
+                                          return const SizedBox(
+                                            width: 200,
+                                            height: 100,
+                                            child: Center(
+                                              child: Icon(
+                                                Icons.broken_image,
+                                                size: 40,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                if (messageText.isNotEmpty)
+                                  Text(messageText),
                                 if (widget.data.isAdmin)
                                   IconButton(
                                     onPressed: () async {
@@ -3965,10 +4396,38 @@ class _PublicChatPageState extends State<PublicChatPage> {
                     },
                   ),
           ),
+          if (selectedImage != null)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  const Icon(Icons.image, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'صورة جاهزة للإرسال',
+                      style: TextStyle(color: Colors.grey.shade400),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        selectedImage = null;
+                      });
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(10),
             child: Row(
               children: [
+                IconButton(
+                  onPressed: pickImage,
+                  icon: const Icon(Icons.image),
+                ),
                 Expanded(
                   child: TextField(
                     controller: controller,
@@ -3978,8 +4437,16 @@ class _PublicChatPageState extends State<PublicChatPage> {
                   ),
                 ),
                 IconButton(
-                  onPressed: send,
-                  icon: const Icon(Icons.send),
+                  onPressed: sending ? null : send,
+                  icon: sending
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.send),
                 ),
               ],
             ),
@@ -3990,9 +4457,9 @@ class _PublicChatPageState extends State<PublicChatPage> {
   }
 }
 
-/// =======================================================
-/// لعبة القفز
-/// =======================================================
+// =======================================================
+// لعبة القفز
+// =======================================================
 
 class JumpGamePage extends StatefulWidget {
   final AppData data;
@@ -4269,9 +4736,9 @@ class JumpPainter extends CustomPainter {
   }
 }
 
-/// =======================================================
-/// المتصدرون
-/// =======================================================
+// =======================================================
+// المتصدرون
+// =======================================================
 
 class LeaderboardPage extends StatelessWidget {
   final AppData data;
@@ -4321,9 +4788,9 @@ class LeaderboardPage extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// المتجر
-/// =======================================================
+// =======================================================
+// المتجر
+// =======================================================
 
 class ShopPage extends StatefulWidget {
   final AppData data;
@@ -4442,9 +4909,9 @@ class _ShopItem extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// إرسال رسالة للإدارة
-/// =======================================================
+// =======================================================
+// إرسال رسالة للإدارة
+// =======================================================
 
 class SendMessagePage extends StatefulWidget {
   final AppData data;
@@ -4519,9 +4986,9 @@ class _SendMessagePageState extends State<SendMessagePage> {
   }
 }
 
-/// =======================================================
-/// الإعدادات
-/// =======================================================
+// =======================================================
+// الإعدادات
+// =======================================================
 
 class SettingsPage extends StatelessWidget {
   final AppData data;
@@ -4622,9 +5089,9 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// تسجيل دخول المدير (Supabase)
-/// =======================================================
+// =======================================================
+// تسجيل دخول المدير
+// =======================================================
 
 class AdminLoginPage extends StatefulWidget {
   final AppData data;
@@ -4686,7 +5153,7 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (_) => HomePage(data: widget.data),
+          builder: (_) => AdminPanelPage(data: widget.data),
         ),
         (_) => false,
       );
@@ -4746,9 +5213,9 @@ class _AdminLoginPageState extends State<AdminLoginPage> {
   }
 }
 
-/// =======================================================
-/// لوحة الإدارة
-/// =======================================================
+// =======================================================
+// لوحة الإدارة
+// =======================================================
 
 class AdminPanelPage extends StatelessWidget {
   final AppData data;
@@ -4759,7 +5226,8 @@ class AdminPanelPage extends StatelessWidget {
   });
 
   Future<void> logout(BuildContext context) async {
-    await data.logoutAccount();
+    await supabase.auth.signOut();
+    await data.setAdminSession(false);
 
     if (!context.mounted) return;
 
@@ -4806,6 +5274,19 @@ class AdminPanelPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          AdminTile(
+            icon: Icons.campaign,
+            title: 'الخبر المهم',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ManageImportantNewsPage(data: data),
+                ),
+              );
+            },
+          ),
           AdminTile(
             icon: Icons.quiz,
             title: 'إدارة الأسئلة',
@@ -4974,9 +5455,142 @@ class AdminTile extends StatelessWidget {
   }
 }
 
-/// =======================================================
-/// إدارة الأسئلة
-/// =======================================================
+// =======================================================
+// إدارة الخبر المهم
+// =======================================================
+
+class ManageImportantNewsPage extends StatefulWidget {
+  final AppData data;
+
+  const ManageImportantNewsPage({
+    super.key,
+    required this.data,
+  });
+
+  @override
+  State<ManageImportantNewsPage> createState() =>
+      _ManageImportantNewsPageState();
+}
+
+class _ManageImportantNewsPageState
+    extends State<ManageImportantNewsPage> {
+  late final TextEditingController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = TextEditingController(
+      text: widget.data.importantNews,
+    );
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (controller.text.trim().isEmpty) {
+      showSnack(context, 'اكتب محتوى الخبر أولاً.');
+      return;
+    }
+
+    await playClickSound();
+
+    final ok = await widget.data.updateImportantNews(controller.text);
+
+    if (!mounted) return;
+
+    showSnack(
+      context,
+      ok ? 'تم حفظ الخبر المهم.' : 'تعذر الحفظ.',
+    );
+
+    if (ok) {
+      Navigator.pop(context);
+    }
+  }
+
+  Future<void> clear() async {
+    await playClickSound();
+
+    final ok = await widget.data.clearImportantNews();
+
+    if (!mounted) return;
+
+    if (ok) {
+      controller.clear();
+      showSnack(context, 'تم حذف الخبر المهم.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('الخبر المهم')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'سيظهر هذا الخبر في أعلى الصفحة الرئيسية لجميع المستخدمين.',
+            style: TextStyle(fontSize: 15),
+          ),
+          const SizedBox(height: 15),
+          TextField(
+            controller: controller,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'نص الخبر المهم',
+              alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: 15),
+          FilledButton.icon(
+            onPressed: save,
+            icon: const Icon(Icons.save),
+            label: const Text('حفظ ونشر'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: clear,
+            icon: const Icon(Icons.delete),
+            label: const Text('حذف الخبر الحالي'),
+          ),
+          const SizedBox(height: 20),
+          if (widget.data.importantNews.isNotEmpty)
+            Card(
+              color: const Color(0xFF8B0000),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'الخبر الحالي:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.data.importantNews,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// =======================================================
+// إدارة الأسئلة
+// =======================================================
 
 class ManageQuizPage extends StatefulWidget {
   final AppData data;
@@ -5067,10 +5681,6 @@ class _ManageQuizPageState extends State<ManageQuizPage> {
     );
   }
 }
-
-/// =======================================================
-/// محرر الأسئلة
-/// =======================================================
 
 class QuizEditorPage extends StatefulWidget {
   final AppData data;
@@ -5348,9 +5958,9 @@ class _QuizEditorPageState extends State<QuizEditorPage> {
   }
 }
 
-/// =======================================================
-/// إدارة الشخصيات
-/// =======================================================
+// =======================================================
+// إدارة الشخصيات
+// =======================================================
 
 class ManageCharactersPage extends StatefulWidget {
   final AppData data;
@@ -5512,9 +6122,9 @@ class _ManageCharactersPageState extends State<ManageCharactersPage> {
   }
 }
 
-/// =======================================================
-/// إدارة الأنميات
-/// =======================================================
+// =======================================================
+// إدارة الأنميات
+// =======================================================
 
 class ManageAnimePage extends StatefulWidget {
   final AppData data;
@@ -5674,9 +6284,9 @@ class _ManageAnimePageState extends State<ManageAnimePage> {
   }
 }
 
-/// =======================================================
-/// إدارة الأخبار
-/// =======================================================
+// =======================================================
+// إدارة الأخبار
+// =======================================================
 
 class ManageNewsPage extends StatefulWidget {
   final AppData data;
@@ -5822,9 +6432,9 @@ class _ManageNewsPageState extends State<ManageNewsPage> {
   }
 }
 
-/// =======================================================
-/// إدارة الإشعارات
-/// =======================================================
+// =======================================================
+// إدارة الإشعارات
+// =======================================================
 
 class ManageNotificationsPage extends StatefulWidget {
   final AppData data;
@@ -5909,9 +6519,9 @@ class _ManageNotificationsPageState
   }
 }
 
-/// =======================================================
-/// إدارة الاستطلاع
-/// =======================================================
+// =======================================================
+// إدارة الاستطلاع
+// =======================================================
 
 class ManagePollPage extends StatefulWidget {
   final AppData data;
@@ -6017,9 +6627,9 @@ class _ManagePollPageState extends State<ManagePollPage> {
   }
 }
 
-/// =======================================================
-/// إدارة اللاعبين
-/// =======================================================
+// =======================================================
+// إدارة اللاعبين
+// =======================================================
 
 class ManagePointsPage extends StatefulWidget {
   final AppData data;
@@ -6182,9 +6792,9 @@ class _ManagePointsPageState extends State<ManagePointsPage> {
   }
 }
 
-/// =======================================================
-/// إدارة كل جديد
-/// =======================================================
+// =======================================================
+// إدارة كل جديد
+// =======================================================
 
 class ManageLatestPage extends StatefulWidget {
   final AppData data;
@@ -6275,9 +6885,9 @@ class _ManageLatestPageState extends State<ManageLatestPage> {
   }
 }
 
-/// =======================================================
-/// إدارة الرسائل
-/// =======================================================
+// =======================================================
+// إدارة الرسائل
+// =======================================================
 
 class ManageMessagesPage extends StatefulWidget {
   final AppData data;
@@ -6323,9 +6933,9 @@ class _ManageMessagesPageState extends State<ManageMessagesPage> {
   }
 }
 
-/// =======================================================
-/// إدارة طلبات المتجر
-/// =======================================================
+// =======================================================
+// إدارة طلبات المتجر
+// =======================================================
 
 class ManagePurchaseRequestsPage extends StatefulWidget {
   final AppData data;
@@ -6419,9 +7029,9 @@ class _ManagePurchaseRequestsPageState
   }
 }
 
-/// =======================================================
-/// SnackBar
-/// =======================================================
+// =======================================================
+// SnackBar
+// =======================================================
 
 void showSnack(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
@@ -6430,4 +7040,129 @@ void showSnack(BuildContext context, String message) {
       behavior: SnackBarBehavior.floating,
     ),
   );
+}
+
+// =======================================================
+// خدمة الإشعارات
+// =======================================================
+class NotificationService {
+  static final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
+
+  static const String _channelId = 'mr_otaku_channel';
+  static const String _channelName = 'إشعارات مستر أوتاكو';
+  static const String _channelDesc = 'إشعارات الأخبار والإدارة';
+
+  static Future<void> init() async {
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    );
+
+    await _plugin.initialize(settings);
+
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _channelId,
+            _channelName,
+            description: _channelDesc,
+            importance: Importance.high,
+          ),
+        );
+  }
+
+  static Future<void> show(
+    String title,
+    String body, {
+    int id = 0,
+  }) async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.high,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+    );
+
+    await _plugin.show(id, title, body, details);
+  }
+
+  static Future<void> registerBackgroundTask() async {
+    await Workmanager().initialize(callbackDispatcher);
+
+    await Workmanager().registerPeriodicTask(
+      'mr_otaku_check',
+      'checkNotifications',
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingWorkPolicy.replace,
+      constraints: Constraints(
+        networkType: NetworkType.connected,
+      ),
+    );
+  }
+
+  static Future<void> checkNewNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastId = prefs.getString('mr_otaku_last_notif_id') ?? '';
+
+      final result = await Supabase.instance.client
+          .from('notifications')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if (result.isEmpty) return;
+
+      final first = result.first;
+      final currentId = clean(first['id']);
+
+      if (lastId.isNotEmpty && currentId != lastId) {
+        await show(
+          clean(first['title']),
+          clean(first['body']),
+          id: currentId.hashCode,
+        );
+      }
+
+      await prefs.setString('mr_otaku_last_notif_id', currentId);
+    } catch (e) {
+      debugPrint('Check notifications error: $e');
+    }
+  }
+}
+
+// =======================================================
+// Dispatcher للمهمة الدورية
+// =======================================================
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    try {
+      try {
+        Supabase.instance.client;
+      } catch (_) {
+        await Supabase.initialize(
+          url: 'https://sekchgllbimoedsjoumi.supabase.co',
+          anonKey:
+              'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNla2NoZ2xsYmltb2Vkc2pvdW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI3NTk5MDAsImV4cCI6MjA0ODMzNTkwMH0.2KyojN-jT9-7QV0SME6tKQOc030mCx1diz7aP31MA3E',
+        );
+      }
+    } catch (_) {}
+
+    await NotificationService.init();
+    await NotificationService.checkNewNotifications();
+
+    return true;
+  });
 }
